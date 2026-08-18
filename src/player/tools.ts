@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import { planRoad, type RoadPlan } from '../roads/buildability'
 import { ROAD_SPECS, ROAD_SPEC_ORDER, RoadSpecId } from '../roads/roadSpec'
-import { BUILDINGS, type BuildingType } from '../sim/buildings'
-import { PLACEABLE_ORDER } from '../sim/structureSite'
+import { BUILDINGS, type Building, type BuildingType } from '../sim/buildings'
+import { PLACEABLE_ORDER, type StructureSite } from '../sim/structureSite'
+import type { ConstructionSite } from '../roads/construction'
+import { PLACED_BUILDING_ID_BASE } from '../sim/world'
 import type { TilePos } from '../roads/tileLine'
 import type { World } from '../sim/world'
 import { worldToTile } from '../world/heightfield'
@@ -15,6 +17,7 @@ export enum ToolId {
   Stake = 'stake',
   Work = 'work',
   Place = 'place',
+  Demolish = 'demolish',
 }
 
 export const TOOL_ORDER: readonly ToolId[] = [
@@ -23,7 +26,16 @@ export const TOOL_ORDER: readonly ToolId[] = [
   ToolId.Stake,
   ToolId.Work,
   ToolId.Place,
+  ToolId.Demolish,
 ]
+
+/** What the demolition tool would take away if the player clicked now. */
+export type DemolishTarget =
+  | { kind: 'building'; building: Building }
+  | { kind: 'structureSite'; site: StructureSite }
+  | { kind: 'site'; site: ConstructionSite }
+  | { kind: 'road'; tx: number; tz: number; edgeId: number; label: string }
+  | null
 
 export interface SurveyReading {
   readonly x: number
@@ -151,6 +163,9 @@ export class ToolBelt {
       case 'Digit5':
         this.tool = ToolId.Place
         break
+      case 'Digit6':
+        this.tool = ToolId.Demolish
+        break
       case 'KeyQ':
         this.cycleSpec(-1)
         break
@@ -193,8 +208,10 @@ export class ToolBelt {
       if (this.tool === ToolId.Stake) this.addStake()
       if (this.tool === ToolId.Work) this.working = true
       if (this.tool === ToolId.Place) this.placeStructure()
+      if (this.tool === ToolId.Demolish) this.demolish(false)
     }
     if (event.button === 2 && this.tool === ToolId.Stake) this.stakes.pop()
+    if (event.button === 2 && this.tool === ToolId.Demolish) this.demolish(true)
   }
 
   private onMouseUp = (event: MouseEvent): void => {
@@ -236,6 +253,99 @@ export class ToolBelt {
     const label = BUILDINGS[this.placementType].label
     if (this.world.placeStructure(this.placementType, this.aim.x, this.aim.z)) {
       this.lastMessage = `${label}の建設地を決めた。資材が届いたら施工できる。`
+    }
+  }
+
+  /**
+   * What the crosshair is over, in the order the player means it: a finished
+   * building first, then work in progress, then the road surface itself.
+   */
+  demolishTarget(): DemolishTarget {
+    const tile = this.aimTile()
+    if (!tile || !this.aim) return null
+    const world = this.world
+    const grid = world.grid
+    const index = grid.index(tile.tx, tile.tz)
+
+    const buildingId = grid.structure[index]
+    if (buildingId >= 0) {
+      const building = world.buildings.find((candidate) => candidate.id === buildingId)
+      if (building) return { kind: 'building', building }
+    }
+
+    const structureSite = world.structureSiteAt(this.aim.x, this.aim.z)
+    if (structureSite) return { kind: 'structureSite', site: structureSite }
+
+    const site = world.siteAtTile(tile.tx, tile.tz)
+    if (site) return { kind: 'site', site }
+
+    if (grid.hasRoad(tile.tx, tile.tz)) {
+      const edgeId = grid.roadEdge[index]
+      return {
+        kind: 'road',
+        tx: tile.tx,
+        tz: tile.tz,
+        edgeId,
+        label: world.roads.get(edgeId)?.label ?? '道',
+      }
+    }
+    return null
+  }
+
+  /** Left click takes the one thing aimed at; right click takes the whole road. */
+  private demolish(wholeRoad: boolean): void {
+    const target = this.demolishTarget()
+    if (!target) {
+      this.lastMessage = '撤去できるものがない'
+      return
+    }
+    switch (target.kind) {
+      case 'building': {
+        if (target.building.id < PLACED_BUILDING_ID_BASE) {
+          this.lastMessage = '村の建物は壊せない'
+          return
+        }
+        this.world.demolishBuilding(target.building)
+        this.lastMessage = null
+        return
+      }
+      case 'structureSite': {
+        this.world.cancelStructureSite(target.site)
+        this.lastMessage = null
+        return
+      }
+      case 'site': {
+        this.world.cancelSite(target.site)
+        this.lastMessage = null
+        return
+      }
+      case 'road': {
+        const here = this.playerTile()
+        if (!wholeRoad && here.tx === target.tx && here.tz === target.tz) {
+          this.lastMessage = '足元の道は撤去できない'
+          return
+        }
+        if (wholeRoad) {
+          if (this.world.grid.roadEdge[this.world.grid.index(here.tx, here.tz)] === target.edgeId) {
+            this.lastMessage = '自分が乗っている道は一括撤去できない'
+            return
+          }
+          this.world.removeRoad(target.edgeId)
+        } else {
+          this.world.removeRoadTile(target.tx, target.tz)
+        }
+        this.lastMessage = null
+        return
+      }
+      default:
+        return
+    }
+  }
+
+  private playerTile(): TilePos {
+    return {
+      tx: worldToTile(this.player.position.x),
+      tz: worldToTile(this.player.position.z),
     }
   }
 

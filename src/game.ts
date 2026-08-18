@@ -17,6 +17,7 @@ import { pickTarget } from './player/picking'
 import { BuildPanel } from './ui/buildPanel'
 import { Hud } from './ui/hud'
 import { Inspector } from './ui/inspector'
+import { MapView } from './ui/mapView'
 import { tileKey } from './roads/tileLine'
 import { tileSurfaceHeight } from './world/surface'
 
@@ -32,6 +33,7 @@ export class Game {
   readonly bridges: BridgeView
   readonly buildPanel: BuildPanel
   readonly inspector: Inspector
+  readonly map: MapView
   readonly agentView = new AgentView()
   readonly weatherView = new WeatherView()
   readonly vegetation: Vegetation
@@ -95,6 +97,7 @@ export class Game {
     this.hud = new Hud(uiRoot)
     this.buildPanel = new BuildPanel(uiRoot)
     this.inspector = new Inspector(uiRoot)
+    this.map = new MapView(uiRoot)
 
     // Tiles that are staked but not yet built are tinted in the terrain itself.
     this.terrainMesh.setOverlay((tx, tz) =>
@@ -103,12 +106,18 @@ export class Game {
 
     const spawn = this.world.layout.farmVillage
     this.player.spawnLookingAt(spawn.x + 34, spawn.z + 26, spawn.x, spawn.z)
+    this.world.reveal(this.player.position.x, this.player.position.z)
     document.addEventListener('keydown', this.onKeyDown)
     if (!world) this.world.log('info', '谷に着いた。鉱山村は食料が尽きかけている。')
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
     const clock = this.world.clock
+    // Only while playing: the pause overlay is not the place for a map.
+    if (event.code === 'KeyM' && this.player.locked) {
+      this.map.toggle()
+      return
+    }
     if (event.code === 'Space') {
       event.preventDefault()
       if (clock.paused) clock.speed = this.previousSpeed
@@ -163,8 +172,9 @@ export class Game {
 
     this.player.update(realDelta)
     this.tools.update()
+    this.world.reveal(this.player.position.x, this.player.position.z)
 
-    let bridgeChanged = false
+    let bridgeChanged = this.world.consumeBridgesChanged()
     for (const [tx, tz] of this.world.consumeDirtyTiles()) {
       this.terrainMesh.markTileDirty(tx, tz)
       if (this.world.grid.hasRoad(tx, tz)) this.vegetation.clearTile(tx, tz)
@@ -175,6 +185,9 @@ export class Game {
 
     this.agentView.update(this.world.agents.agents, this.player.position)
     for (const building of this.world.consumeNewBuildings()) this.structures.addBuilding(building)
+    for (const building of this.world.consumeRemovedBuildings()) {
+      this.structures.removeBuilding(building)
+    }
     this.weatherView.update(this.world.weather.intensity, this.viewport.camera, realDelta)
     this.vegetation.update(this.player.position)
     this.elapsed += realDelta
@@ -196,6 +209,7 @@ export class Game {
     this.viewport.render()
     this.hud.update(this.world, realDelta)
     this.buildPanel.update(this.world, this.tools)
+    this.map.update(this.world, this.player.mapPose(), realDelta)
     this.inspector.update(
       this.world,
       this.tools.tool === ToolId.Inspect

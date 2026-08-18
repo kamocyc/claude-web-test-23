@@ -6,7 +6,7 @@ import { ALL_RESOURCES, type Resource, type Stock, emptyStock } from './resource
 import { Weather } from './weather'
 import { World } from './world'
 
-export const SAVE_VERSION = 2
+export const SAVE_VERSION = 3
 export const SAVE_KEY = 'roads-build-towns/save'
 
 interface SavedRoadTile {
@@ -30,6 +30,8 @@ export interface SaveData {
   milestones: string[]
   /** Terraformed vertices, as [index, height] pairs. */
   vertices: number[]
+  /** Explored tiles, run-length encoded, starting with a run of unexplored. */
+  explored: number[]
   roadTiles: SavedRoadTile[]
   edges: Array<{
     id: number
@@ -50,6 +52,38 @@ export interface SaveData {
     stock: number[]
     labourDone: number
   }>
+}
+
+/**
+ * The explored mask is one bit per tile over a 256x256 grid, and it is almost
+ * all long runs, so run lengths are far smaller than the raw array.
+ */
+const encodeExplored = (explored: Uint8Array): number[] => {
+  const runs: number[] = []
+  let value = 0
+  let count = 0
+  for (let i = 0; i < explored.length; i++) {
+    const here = explored[i] === 1 ? 1 : 0
+    if (here === value) {
+      count++
+      continue
+    }
+    runs.push(count)
+    value = here
+    count = 1
+  }
+  runs.push(count)
+  return runs
+}
+
+const decodeExplored = (runs: readonly number[], into: Uint8Array): void => {
+  let index = 0
+  let value = 0
+  for (const run of runs) {
+    if (value === 1) into.fill(1, index, Math.min(index + run, into.length))
+    index += run
+    value = value === 1 ? 0 : 1
+  }
 }
 
 const stockToArray = (stock: Stock): number[] => ALL_RESOURCES.map((resource) => stock[resource])
@@ -99,6 +133,7 @@ export const serialize = (world: World): SaveData => {
     bandits: { active: world.bandits.active, interest: world.bandits.interest },
     milestones: [...world.milestones],
     vertices,
+    explored: encodeExplored(world.explored),
     roadTiles,
     edges: [...world.roads.edges.values()].map((edge) => ({
       id: edge.id,
@@ -151,6 +186,8 @@ export const deserialize = (data: SaveData): World => {
   for (let i = 0; i + 1 < data.vertices.length; i += 2) {
     world.field.heights[data.vertices[i]] = data.vertices[i + 1]
   }
+
+  decodeExplored(data.explored ?? [], world.explored)
 
   for (const edge of data.edges) {
     const restored = world.roads.create(

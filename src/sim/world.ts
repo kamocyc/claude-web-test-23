@@ -6,17 +6,17 @@ import { ConstructionSite } from '../roads/construction'
 import { RoadNetwork } from '../roads/roadNetwork'
 import { BRIDGE_SPECS } from '../roads/roadSpec'
 import { tileKey } from '../roads/tileLine'
-import type { Heightfield } from '../world/heightfield'
+import { TILE_SIZE, worldToTile, type Heightfield } from '../world/heightfield'
 import { generateWorld, type WorldLayout } from '../world/terrainGen'
 import type { TileGrid } from '../world/tileGrid'
 import { PathFinder } from '../roads/pathfinding'
 import { applyTraffic, repairTiles, stepRoadWear } from '../roads/wear'
-import { RoadClass } from '../world/tileGrid'
+import { RoadClass, RoadSurface } from '../world/tileGrid'
 import { AgentKind, AgentState, AgentSystem, type Agent } from './agents'
 import { LogisticsSystem, type HaulOrder } from './logistics'
 import { findStopTile } from './navigation'
 import { stepProduction } from './production'
-import { RESOURCE_INFO, Resource } from './resources'
+import { ALL_RESOURCES, RESOURCE_INFO, Resource, emptyStock, type Stock } from './resources'
 import { FARM_VILLAGE, MINE_VILLAGE, buildSettlement } from './scenario'
 import type { Settlement } from './settlement'
 import type { StockHolder } from './stock'
@@ -39,6 +39,12 @@ export const BUILDER_RELEASE_DISTANCE = 360
 
 /** Game hours between passes of road wear and drying. */
 const WEAR_INTERVAL_HOURS = 0.25
+
+/** How far the player can see well enough to put it on their map, in metres. */
+export const REVEAL_RADIUS = 62
+
+/** Player-sited buildings get ids from here up, so the village core is safe. */
+export const PLACED_BUILDING_ID_BASE = 10000
 
 /** Villagers a settlement will put on public works, given its population. */
 export const builderCountFor = (population: number): number =>
@@ -75,10 +81,18 @@ export class World {
   readonly milestones = new Set<string>()
   /** Tile keys still waiting to be built, for the construction overlay. */
   readonly plannedTileKeys = new Set<number>()
+  /** 1 where the player has been close enough to map the ground. */
+  readonly explored: Uint8Array
+  /** Buildings pulled down this tick, for the renderer to drop. */
+  readonly removedBuildings: Building[] = []
+  /** Set when a bridge deck appeared or went away, so the view can rebuild. */
+  bridgesChanged = false
   /** Set by the player controller while they are working a site by hand. */
   playerWork: { x: number; z: number; active: boolean } = { x: 0, z: 0, active: false }
   private nextSiteId = 1
+  private nextPlacedBuildingId = PLACED_BUILDING_ID_BASE
   private wearAccumulator = 0
+  private lastRevealedTile = -1
 
   /** Tiles changed this tick, so the renderer can repaint just those chunks. */
   private readonly dirtyTiles: Array<[number, number]> = []
@@ -90,6 +104,7 @@ export class World {
     this.grid = generated.grid
     this.layout = generated.layout
     this.rng = new Rng(seed ^ 0x5f3a)
+    this.explored = new Uint8Array(this.grid.size * this.grid.size)
 
     const markFootprint = (tx: number, tz: number, buildingId: number): void => {
       if (!this.grid.inBounds(tx, tz)) return
@@ -349,7 +364,7 @@ export class World {
   private finishStructure(site: StructureSite): void {
     const def = BUILDINGS[site.type]
     const building: Building = {
-      id: 10000 + this.structureSites.length + this.buildings.length,
+      id: this.nextPlacedBuildingId++,
       type: site.type,
       settlementId: this.nearestSettlementId(site.x, site.z),
       x: site.x,
@@ -375,6 +390,169 @@ export class World {
     this.log('good', `${site.label} が完成した`)
   }
 
+  /** Hand leftover materials back to the nearest village, up to what it can hold. */
+  private returnMaterials(x: number, z: number, stock: Stock, scale = 1): void {
+    const settlement = this.settlements.get(this.nearestSettlementId(x, z))
+    if (!settlement) return
+    for (const resource of ALL_RESOURCES) {
+      const amount = stock[resource] * scale
+      if (amount <= 0.01) continue
+      const room = Math.max(0, settlement.capacityFor(resource) - settlement.stock[resource])
+      settlement.stock[resource] += Math.min(amount, room)
+      stock[resource] = 0
+    }
+  }
+
+  /** Send every hauler and builder tied to a vanished site back home. */
+  private releaseAgentsFrom(siteId: string): void {
+    for (const agent of this.agents.agents) {
+      const onSite = agent.siteId === siteId
+      const hauling = agent.order !== null && (agent.order.fromId === siteId || agent.order.toId === siteId)
+      if (!onSite && !hauling) continue
+      if (hauling && agent.cargoResource !== null) {
+        // Cargo already picked up goes back to the village rather than evaporating.
+        const home = this.settlements.get(agent.homeId)
+        if (home) home.stock[agent.cargoResource] += agent.cargoAmount
+        agent.cargoResource = null
+        agent.cargoAmount = 0
+      }
+      agent.siteId = null
+      agent.order = null
+      this.agents.sendHome(agent)
+    }
+  }
+
+  /** The road work in progress covering a tile, if any. */
+  siteAtTile(tx: number, tz: number): ConstructionSite | null {
+    for (const site of this.sites) {
+      if (site.plan.tiles.some((tile) => tile.tx === tx && tile.tz === tz)) return site
+    }
+    return null
+  }
+
+  /** The building site the player has staked out at a tile, if any. */
+  structureSiteAt(x: number, z: number, radius = 6): StructureSite | null {
+    let best: StructureSite | null = null
+    let bestDistance = radius
+    for (const site of this.structureSites) {
+      const distance = Math.hypot(site.x - x, site.z - z)
+      if (distance <= bestDistance) {
+        best = site
+        bestDistance = distance
+      }
+    }
+    return best
+  }
+
+  /**
+   * Abandon a road under construction. Tiles already opened stay - they are
+   * real road - but nothing further is built and the delivered materials are
+   * carried back.
+   */
+  cancelSite(site: ConstructionSite): boolean {
+    const at = this.sites.indexOf(site)
+    if (at < 0) return false
+    this.sites.splice(at, 1)
+
+    for (let i = site.tileIndex; i < site.plan.tiles.length; i++) {
+      const tile = site.plan.tiles[i]
+      this.plannedTileKeys.delete(tileKey(tile.tx, tile.tz))
+      this.markTileDirty(tile.tx, tile.tz)
+    }
+
+    const edge = this.roads.get(site.edgeId)
+    if (edge) {
+      if (site.tileIndex > 0) {
+        // Keep the stretch that exists, and stop pretending the rest is coming.
+        edge.tiles.length = site.tileIndex
+        edge.complete = true
+      } else {
+        this.roads.edges.delete(edge.id)
+      }
+    }
+
+    this.returnMaterials(site.x, site.z, site.stock)
+    this.releaseAgentsFrom(site.id)
+    this.log('warn', `${site.label} の工事を取りやめた`)
+    return true
+  }
+
+  /** Abandon a building the player sited but never finished. */
+  cancelStructureSite(site: StructureSite): boolean {
+    const at = this.structureSites.indexOf(site)
+    if (at < 0) return false
+    this.structureSites.splice(at, 1)
+    this.returnMaterials(site.x, site.z, site.stock)
+    this.releaseAgentsFrom(site.id)
+    this.log('warn', `${site.label} の建設地を取り消した`)
+    return true
+  }
+
+  /**
+   * Pull down a building the player put up. The village core is not the
+   * player's to demolish; half the materials come back from the rest.
+   */
+  demolishBuilding(building: Building): boolean {
+    if (building.id < PLACED_BUILDING_ID_BASE) return false
+    const at = this.buildings.indexOf(building)
+    if (at < 0) return false
+    this.buildings.splice(at, 1)
+
+    for (let index = 0; index < this.grid.structure.length; index++) {
+      if (this.grid.structure[index] !== building.id) continue
+      this.grid.structure[index] = -1
+      this.grid.blocked[index] = 0
+      this.markTileDirty(index % this.grid.size, Math.floor(index / this.grid.size))
+    }
+
+    const cost = PLACEABLE[building.type]
+    if (cost) {
+      const salvage = emptyStock()
+      for (const [key, amount] of Object.entries(cost.materials)) {
+        salvage[Number(key) as Resource] = amount as number
+      }
+      this.returnMaterials(building.x, building.z, salvage, 0.5)
+    }
+
+    this.removedBuildings.push(building)
+    this.log('warn', `${BUILDINGS[building.type].label} を取り壊した`)
+    return true
+  }
+
+  /** Tear the surface off one built tile. The earthworks under it stay. */
+  removeRoadTile(tx: number, tz: number): boolean {
+    if (!this.grid.inBounds(tx, tz)) return false
+    const index = this.grid.index(tx, tz)
+    if (this.grid.roadSurface[index] === RoadSurface.None) return false
+    if (this.grid.isBridge(tx, tz)) {
+      this.grid.deckHeight[index] = 0
+      this.bridgesChanged = true
+    }
+    this.grid.clearRoad(tx, tz)
+    this.grid.condition[index] = 1
+    this.grid.wetness[index] = 0
+    const listed = this.roadTiles.indexOf(index)
+    if (listed >= 0) this.roadTiles.splice(listed, 1)
+    this.markTileDirty(tx, tz)
+    return true
+  }
+
+  /** Remove a whole named road: every tile still carrying its surface. */
+  removeRoad(edgeId: number): number {
+    const edge = this.roads.get(edgeId)
+    let removed = 0
+    for (const index of this.roadTiles.slice()) {
+      if (this.grid.roadEdge[index] !== edgeId) continue
+      if (this.removeRoadTile(index % this.grid.size, Math.floor(index / this.grid.size))) removed++
+    }
+    for (const site of this.sites.slice()) {
+      if (site.edgeId === edgeId) this.cancelSite(site)
+    }
+    this.roads.edges.delete(edgeId)
+    if (removed > 0 && edge) this.log('warn', `${edge.label} を撤去した（${removed} 区画）`)
+    return removed
+  }
+
   nearestSettlementId(x: number, z: number): string {
     let best = 'farm'
     let bestDistance = Number.POSITIVE_INFINITY
@@ -392,6 +570,52 @@ export class World {
     const list = this.newBuildings.slice()
     this.newBuildings.length = 0
     return list
+  }
+
+  consumeRemovedBuildings(): Building[] {
+    const list = this.removedBuildings.slice()
+    this.removedBuildings.length = 0
+    return list
+  }
+
+  consumeBridgesChanged(): boolean {
+    const changed = this.bridgesChanged
+    this.bridgesChanged = false
+    return changed
+  }
+
+  isExplored(tx: number, tz: number): boolean {
+    return this.grid.inBounds(tx, tz) && this.explored[this.grid.index(tx, tz)] === 1
+  }
+
+  /**
+   * Put everything within sight of (x, z) on the map. Only ground the player
+   * has actually walked past is ever drawn, so the map is a record of the
+   * journey rather than a gift. Returns true when new ground was added.
+   */
+  reveal(x: number, z: number): boolean {
+    const cx = worldToTile(x)
+    const cz = worldToTile(z)
+    if (!this.grid.inBounds(cx, cz)) return false
+    const here = this.grid.index(cx, cz)
+    if (here === this.lastRevealedTile) return false
+    this.lastRevealedTile = here
+
+    const radius = Math.round(REVEAL_RADIUS / TILE_SIZE)
+    let changed = false
+    for (let dz = -radius; dz <= radius; dz++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dz * dz > radius * radius) continue
+        const tx = cx + dx
+        const tz = cz + dz
+        if (!this.grid.inBounds(tx, tz)) continue
+        const index = this.grid.index(tx, tz)
+        if (this.explored[index] === 1) continue
+        this.explored[index] = 1
+        changed = true
+      }
+    }
+    return changed
   }
 
   /** Traffic crossing a tile: wear, and the tonnage that attracts bandits. */

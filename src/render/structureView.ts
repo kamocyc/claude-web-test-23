@@ -88,6 +88,7 @@ const buildLabel = (text: string, x: number, y: number, z: number): THREE.Sprite
 
 export class StructureView {
   readonly group = new THREE.Group()
+  private readonly meshes = new Map<number, THREE.Group>()
 
   constructor(
     private readonly field: Heightfield,
@@ -97,7 +98,20 @@ export class StructureView {
   }
 
   addBuilding(building: Building): void {
-    this.group.add(buildMesh(building, this.field.sample(building.x, building.z)))
+    const mesh = buildMesh(building, this.field.sample(building.x, building.z))
+    this.meshes.set(building.id, mesh)
+    this.group.add(mesh)
+  }
+
+  /** Take a demolished building off the scene and give its geometry back. */
+  removeBuilding(building: Building): void {
+    const mesh = this.meshes.get(building.id)
+    if (!mesh) return
+    this.meshes.delete(building.id)
+    this.group.remove(mesh)
+    mesh.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.geometry.dispose()
+    })
   }
 
   addLabel(text: string, x: number, z: number, height: number): void {

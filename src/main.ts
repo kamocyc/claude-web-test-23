@@ -14,6 +14,7 @@ overlay.innerHTML = `
     <h1>道が町を作る</h1>
     <p>谷には農村と鉱山村がある。川は荷車を通さない。</p>
     <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移動 / <kbd>Shift</kbd> 走る / マウス 視点</p>
+    <p><kbd>M</kbd> 地図（歩いたところだけ見える） / <kbd>6</kbd> 撤去</p>
     <p><kbd>F5</kbd> 保存 / <kbd>F9</kbd> 読み込み / <kbd>Esc</kbd> 中断</p>
     <p id="overlay-hint">クリックして開始</p>
   </div>

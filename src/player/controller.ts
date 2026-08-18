@@ -3,7 +3,7 @@ import { clamp } from '../core/math'
 import type { Heightfield } from '../world/heightfield'
 import { WORLD_SIZE, worldToTile } from '../world/heightfield'
 import { RoadSurface, type TileGrid } from '../world/tileGrid'
-import { waterDepthAt } from '../world/terrainGen'
+import { canStandOn, surfaceHeightAt, wadeDepthAt } from '../world/surface'
 
 const EYE_HEIGHT = 1.7
 const WALK_SPEED = 4.6
@@ -47,13 +47,23 @@ export class PlayerController {
   }
 
   spawnAt(x: number, z: number, facing = 0): void {
-    this.position.set(x, this.field.sample(x, z) + EYE_HEIGHT, z)
+    this.position.set(x, this.surfaceAt(x, z) + EYE_HEIGHT, z)
     this.yaw = facing
+  }
+
+  /** What the player is standing on here: the ground, or a bridge deck over it. */
+  private surfaceAt(x: number, z: number): number {
+    return surfaceHeightAt(this.field, this.grid, x, z)
   }
 
   /** Drop the player at (x, z) already looking at a point of interest. */
   spawnLookingAt(x: number, z: number, targetX: number, targetZ: number): void {
     this.spawnAt(x, z, Math.atan2(-(targetX - x), -(targetZ - z)))
+  }
+
+  /** Position and facing, as the map wants them. */
+  mapPose(): { x: number; z: number; yaw: number } {
+    return { x: this.position.x, z: this.position.z, yaw: this.yaw }
   }
 
   isDown(code: string): boolean {
@@ -113,16 +123,20 @@ export class PlayerController {
       this.tryMove(stepX, stepZ)
     }
 
-    const ground = this.field.sample(this.position.x, this.position.z)
+    const surface = this.surfaceAt(this.position.x, this.position.z)
     const depth = this.waterDepthHere()
     this.wadeDepth = depth
-    this.position.y = ground + EYE_HEIGHT - Math.min(depth, 1.1) * 0.5
+    this.position.y = surface + EYE_HEIGHT - Math.min(depth, 1.1) * 0.5
   }
 
+  /** Zero on a bridge: the whole point of the deck is to stay out of the river. */
   private waterDepthHere(): number {
-    const tx = worldToTile(this.position.x)
-    const tz = worldToTile(this.position.z)
-    return waterDepthAt(this.field, this.grid, tx, tz)
+    return wadeDepthAt(
+      this.field,
+      this.grid,
+      worldToTile(this.position.x),
+      worldToTile(this.position.z),
+    )
   }
 
   /** Slide along blockers instead of sticking to them. */
@@ -135,11 +149,13 @@ export class PlayerController {
 
   private canStand(x: number, z: number): boolean {
     if (x < 1 || z < 1 || x > WORLD_SIZE - 1 || z > WORLD_SIZE - 1) return false
-    const tx = worldToTile(x)
-    const tz = worldToTile(z)
-    if (this.grid.blocked[this.grid.index(tx, tz)] === 1) return false
-    // Deep water is a real barrier: this is why the ford and the bridge matter.
-    if (!this.grid.isBridge(tx, tz) && waterDepthAt(this.field, this.grid, tx, tz) > 1.3) return false
-    return true
+    // Deep water is a real barrier - unless a deck has been built over it.
+    return canStandOn(
+      this.field,
+      this.grid,
+      worldToTile(x),
+      worldToTile(z),
+      this.surfaceAt(this.position.x, this.position.z),
+    )
   }
 }

@@ -115,3 +115,32 @@ canvas { display: block; }
   width: 320px;
 }
 #inspector .row { flex-wrap: wrap; gap: 6px; }
+
+#map-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 8, 12, 0.78);
+  pointer-events: none;
+  z-index: 15;
+}
+
+#map-box {
+  position: relative;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+}
+
+#map-canvas {
+  border-radius: 6px;
+  image-rendering: pixelated;
+  background: #0b0e13;
+}
+
+#map-caption { color: var(--text); font-size: 12px; }

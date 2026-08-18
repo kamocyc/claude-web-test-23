@@ -13,6 +13,7 @@ const TOOL_LABELS: Record<ToolId, string> = {
   [ToolId.Stake]: '杭打ち',
   [ToolId.Work]: '施工',
   [ToolId.Place]: '建てる',
+  [ToolId.Demolish]: '撤去',
 }
 
 const BAND_CLASS = { easy: 'good', hard: 'warn', cartsBlocked: 'bad' } as const
@@ -77,7 +78,7 @@ export class BuildPanel {
   }
 
   update(world: World, tools: ToolBelt): void {
-    const header = `<div class="row title">${TOOL_LABELS[tools.tool]}<span class="muted">　1 調べる / 2 測量 / 3 杭打ち / 4 施工 / 5 建てる</span></div>`
+    const header = `<div class="row title">${TOOL_LABELS[tools.tool]}<span class="muted">　1 調べる / 2 測量 / 3 杭打ち / 4 施工 / 5 建てる / 6 撤去　<span class="key">M</span> 地図</span></div>`
     this.element.innerHTML = header + this.body(world, tools) + this.message(tools)
   }
 
@@ -95,6 +96,8 @@ export class BuildPanel {
         return this.work(world)
       case ToolId.Place:
         return this.place(world, tools)
+      case ToolId.Demolish:
+        return this.demolish(tools)
       case ToolId.Inspect:
       default:
         return '<div class="row muted">見たいものに照準を合わせてクリック</div>'
@@ -156,6 +159,30 @@ export class BuildPanel {
       ${pending}
       <div class="row muted">左クリックで建設地を決める。資材が届いたら 4 施工 で建てる。</div>
     `
+  }
+
+  /** Says exactly what a click would take away, before it is taken away. */
+  private demolish(tools: ToolBelt): string {
+    const hint =
+      '<div class="row muted">左クリックで照準のものを撤去　右クリックで道を丸ごと撤去。資材は一部だけ戻る。</div>'
+    const target = tools.demolishTarget()
+    if (!target) return `<div class="row muted">撤去できるものに照準を合わせる</div>${hint}`
+    switch (target.kind) {
+      case 'building':
+        return `<div class="row"><span class="name">建物</span><span>${escapeHtml(BUILDINGS[target.building.type].label)}</span>
+          <span class="warn">取り壊す（資材は半分だけ戻る）</span></div>${hint}`
+      case 'structureSite':
+        return `<div class="row"><span class="name">建設地</span><span>${escapeHtml(target.site.label)}</span>
+          <span class="warn">取り消す（届いた資材は村に戻る）</span></div>${hint}`
+      case 'site':
+        return `<div class="row"><span class="name">工事現場</span><span>${escapeHtml(target.site.label)}</span>
+          <span>${Math.round(target.site.progress() * 100)}%</span>
+          <span class="warn">工事を取りやめる（開通済みの区画は残る）</span></div>${hint}`
+      case 'road':
+      default:
+        return `<div class="row"><span class="name">道</span><span>${escapeHtml(target.label)}</span>
+          <span class="warn">この区画を撤去</span><span class="muted">右クリックでこの道全体</span></div>${hint}`
+    }
   }
 
   private work(world: World): string {

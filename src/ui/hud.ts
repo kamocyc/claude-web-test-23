@@ -49,8 +49,14 @@ export class Hud {
 
     const clock = world.clock
     const speed = clock.paused ? '一時停止' : `${clock.speed}倍`
+    const danger = world.bandits.active
+      ? '<span class="bad">盗賊の噂</span>'
+      : ''
     this.clockEl.innerHTML = `
       <div class="row big">${clock.day} 日目 ${clock.formatTime()}</div>
+      <div class="row"><span>${world.weather.label}</span>${
+        world.weather.intensity > 0.3 ? '<span class="warn">土道がぬかるむ</span>' : ''
+      }${danger}</div>
       <div class="row muted">${speed}　<span class="key">Space</span> 停止 / <span class="key">[</span><span class="key">]</span> 速度</div>
     `
 

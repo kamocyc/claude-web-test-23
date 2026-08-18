@@ -23,6 +23,7 @@ export type StuckReason =
   | { kind: 'noRoute'; failure: BlockedReason; resource: Resource }
   | { kind: 'noCargo'; resource: Resource }
   | { kind: 'noWork' }
+  | { kind: 'robbed' }
 
 /**
  * Everything the inspector needs to answer the five questions the design asks

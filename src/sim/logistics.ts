@@ -59,7 +59,7 @@ export class LogisticsSystem {
   private collectDemands(): Demand[] {
     const demands: Demand[] = []
 
-    for (const site of this.world.sites) {
+    for (const site of [...this.world.sites, ...this.world.structureSites]) {
       for (const [key, amount] of Object.entries(site.outstandingMaterials())) {
         const units = Math.ceil(amount as number)
         if (units >= MIN_UNITS) {
@@ -212,7 +212,7 @@ export class LogisticsSystem {
 
   /** Keep every construction site staffed by whoever is free. */
   assignBuilders(): void {
-    const sites = this.world.sites.filter((site) => !site.done)
+    const sites = [...this.world.sites, ...this.world.structureSites].filter((site) => !site.done)
     if (sites.length === 0) return
     const perSite = 6
 

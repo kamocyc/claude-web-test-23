@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { planRoad, type RoadPlan } from '../roads/buildability'
 import { ROAD_SPECS, ROAD_SPEC_ORDER, RoadSpecId } from '../roads/roadSpec'
+import { BUILDINGS, type BuildingType } from '../sim/buildings'
+import { PLACEABLE_ORDER } from '../sim/structureSite'
 import type { TilePos } from '../roads/tileLine'
 import type { World } from '../sim/world'
 import { worldToTile } from '../world/heightfield'
@@ -12,6 +14,7 @@ export enum ToolId {
   Survey = 'survey',
   Stake = 'stake',
   Work = 'work',
+  Place = 'place',
 }
 
 export const TOOL_ORDER: readonly ToolId[] = [
@@ -19,6 +22,7 @@ export const TOOL_ORDER: readonly ToolId[] = [
   ToolId.Survey,
   ToolId.Stake,
   ToolId.Work,
+  ToolId.Place,
 ]
 
 export interface SurveyReading {
@@ -43,6 +47,7 @@ const TERRAIN_LABELS = ['草地', '岩場', '水面', '河原', '畑'] as const
 export class ToolBelt {
   tool: ToolId = ToolId.Survey
   specId: RoadSpecId = RoadSpecId.DirtCartway
+  placementType: BuildingType = PLACEABLE_ORDER[0]
   readonly stakes: TilePos[] = []
   aim: RayHit | null = null
   /** Plan including the segment to the point currently under the crosshair. */
@@ -140,6 +145,9 @@ export class ToolBelt {
       case 'Digit4':
         this.tool = ToolId.Work
         break
+      case 'Digit5':
+        this.tool = ToolId.Place
+        break
       case 'KeyQ':
         this.cycleSpec(-1)
         break
@@ -163,10 +171,17 @@ export class ToolBelt {
   }
 
   private cycleSpec(delta: number): void {
-    if (this.tool !== ToolId.Stake) return
-    const index = ROAD_SPEC_ORDER.indexOf(this.specId)
-    const next = (index + delta + ROAD_SPEC_ORDER.length) % ROAD_SPEC_ORDER.length
-    this.specId = ROAD_SPEC_ORDER[next]
+    if (this.tool === ToolId.Stake) {
+      const index = ROAD_SPEC_ORDER.indexOf(this.specId)
+      const next = (index + delta + ROAD_SPEC_ORDER.length) % ROAD_SPEC_ORDER.length
+      this.specId = ROAD_SPEC_ORDER[next]
+      return
+    }
+    if (this.tool === ToolId.Place) {
+      const index = PLACEABLE_ORDER.indexOf(this.placementType)
+      const next = (index + delta + PLACEABLE_ORDER.length) % PLACEABLE_ORDER.length
+      this.placementType = PLACEABLE_ORDER[next]
+    }
   }
 
   private onMouseDown = (event: MouseEvent): void => {
@@ -174,6 +189,7 @@ export class ToolBelt {
     if (event.button === 0) {
       if (this.tool === ToolId.Stake) this.addStake()
       if (this.tool === ToolId.Work) this.working = true
+      if (this.tool === ToolId.Place) this.placeStructure()
     }
     if (event.button === 2 && this.tool === ToolId.Stake) this.stakes.pop()
   }
@@ -194,6 +210,30 @@ export class ToolBelt {
     if (last && last.tx === tile.tx && last.tz === tile.tz) return
     this.stakes.push(tile)
     this.lastMessage = null
+  }
+
+  /** Site a watchtower, inn or store beside the road the player is standing on. */
+  private placeStructure(): void {
+    const tile = this.aimTile()
+    if (!tile || !this.aim) return
+    const grid = this.world.grid
+    const index = grid.index(tile.tx, tile.tz)
+    if (grid.blocked[index] === 1 || grid.hasRoad(tile.tx, tile.tz)) {
+      this.lastMessage = '道や建物の上には建てられない'
+      return
+    }
+    if (grid.isWater(tile.tx, tile.tz)) {
+      this.lastMessage = '水の上には建てられない'
+      return
+    }
+    if (this.world.field.tileSlope(tile.tx, tile.tz) > 0.35) {
+      this.lastMessage = '地面が急すぎる'
+      return
+    }
+    const label = BUILDINGS[this.placementType].label
+    if (this.world.placeStructure(this.placementType, this.aim.x, this.aim.z)) {
+      this.lastMessage = `${label}の建設地を決めた。資材が届いたら施工できる。`
+    }
   }
 
   /** Enter: turn the staked line into a construction site. */

@@ -1,7 +1,9 @@
 import { round } from '../core/math'
 import { gradeBand, type RoadPlan } from '../roads/buildability'
 import { ToolId, type ToolBelt } from '../player/tools'
+import { BUILDINGS } from '../sim/buildings'
 import { RESOURCE_INFO, type Resource } from '../sim/resources'
+import { PLACEABLE } from '../sim/structureSite'
 import type { World } from '../sim/world'
 import { escapeHtml, formatGrade, resourceName } from './format'
 
@@ -10,6 +12,7 @@ const TOOL_LABELS: Record<ToolId, string> = {
   [ToolId.Survey]: '測量',
   [ToolId.Stake]: '杭打ち',
   [ToolId.Work]: '施工',
+  [ToolId.Place]: '建てる',
 }
 
 const BAND_CLASS = { easy: 'good', hard: 'warn', cartsBlocked: 'bad' } as const
@@ -74,7 +77,7 @@ export class BuildPanel {
   }
 
   update(world: World, tools: ToolBelt): void {
-    const header = `<div class="row title">${TOOL_LABELS[tools.tool]}<span class="muted">　1 調べる / 2 測量 / 3 杭打ち / 4 施工</span></div>`
+    const header = `<div class="row title">${TOOL_LABELS[tools.tool]}<span class="muted">　1 調べる / 2 測量 / 3 杭打ち / 4 施工 / 5 建てる</span></div>`
     this.element.innerHTML = header + this.body(world, tools) + this.message(tools)
   }
 
@@ -90,6 +93,8 @@ export class BuildPanel {
         return this.stake(world, tools)
       case ToolId.Work:
         return this.work(world)
+      case ToolId.Place:
+        return this.place(world, tools)
       case ToolId.Inspect:
       default:
         return '<div class="row muted">見たいものに照準を合わせてクリック</div>'
@@ -129,19 +134,45 @@ export class BuildPanel {
     return specLine + summary + commit
   }
 
+  private place(world: World, tools: ToolBelt): string {
+    const cost = PLACEABLE[tools.placementType]
+    const def = BUILDINGS[tools.placementType]
+    if (!cost) return ''
+    const pending = world.structureSites
+      .map(
+        (site) =>
+          `<div class="row"><span class="name">${escapeHtml(site.label)}</span><span>${Math.round(site.progress() * 100)}%</span>${
+            Object.keys(site.outstandingMaterials()).length > 0
+              ? '<span class="warn">資材待ち</span>'
+              : '<span class="good">施工待ち</span>'
+          }</div>`,
+      )
+      .join('')
+    return `
+      <div class="row"><span class="name">建物</span><span>${def.label}</span>
+        <span class="name">資材</span><span>${materialLine(world, cost.materials)}</span>
+        <span class="name">工数</span><span>のべ ${cost.labour} 人時</span>
+        <span class="muted">Q / E で変更</span></div>
+      ${pending}
+      <div class="row muted">左クリックで建設地を決める。資材が届いたら 4 施工 で建てる。</div>
+    `
+  }
+
   private work(world: World): string {
-    if (world.sites.length === 0) return '<div class="row muted">工事現場がない</div>'
-    const rows = world.sites
+    const sites = [...world.sites, ...world.structureSites]
+    if (sites.length === 0) {
+      return '<div class="row muted">工事現場がない。傷んだ道の上で長押しすると補修できる。</div>'
+    }
+    const rows = sites
       .map((site) => {
-        const blocked =
-          site.blockReason?.kind === 'awaitingMaterials'
-            ? `<span class="warn">${resourceName(site.blockReason.resource)}待ち</span>`
-            : site.blockReason?.kind === 'noWorkers'
-              ? '<span class="warn">人手待ち</span>'
-              : '<span class="good">施工中</span>'
+        const missing = Object.keys(site.outstandingMaterials())
+        const blocked = missing.length
+          ? `<span class="warn">${resourceName(Number(missing[0]) as Resource)}待ち</span>`
+          : site.workers === 0
+            ? '<span class="warn">人手待ち</span>'
+            : '<span class="good">施工中</span>'
         return `<div class="row"><span class="name">${escapeHtml(site.label)}</span>
-          <span>${Math.round(site.progress() * 100)}%</span>
-          <span class="muted">残り ${Math.round(site.remainingLabour())} 人時</span>${blocked}</div>`
+          <span>${Math.round(site.progress() * 100)}%</span>${blocked}</div>`
       })
       .join('')
     return `${rows}<div class="row muted">現場の先端に近づいて左クリック長押しで自分も働く</div>`

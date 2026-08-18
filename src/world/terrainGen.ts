@@ -18,6 +18,8 @@ export interface WorldLayout {
   readonly bridgeHint: Vec2
   /** Gentle natural ramp up to the mine plateau, for players who survey. */
   readonly passRoute: readonly Vec2[]
+  /** Where the bandits watch from, once the road is worth robbing. */
+  readonly banditCamp: Vec2
 }
 
 const FARM: Vec2 = { x: 95, z: 250 }
@@ -233,6 +235,7 @@ export const generateWorld = (seed: number): GeneratedWorld => {
     ford: { x: riverCentreX(FORD_Z), z: FORD_Z },
     bridgeHint: { x: riverCentreX(228), z: 228 },
     passRoute: PASS_ROUTE,
+    banditCamp: { x: 296, z: 264 },
   }
 
   return { field, grid, layout }

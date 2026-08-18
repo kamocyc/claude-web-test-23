@@ -5,6 +5,7 @@ import { WORLD_SIZE } from '../world/heightfield'
 const DAY_SKY = new THREE.Color(0x8fb6d6)
 const NIGHT_SKY = new THREE.Color(0x0d1524)
 const DUSK_SKY = new THREE.Color(0xd2895a)
+const RAIN_SKY = new THREE.Color(0x6a7480)
 
 /** Scene, camera, lights and the day/night cycle that drives them. */
 export class Viewport {
@@ -41,8 +42,8 @@ export class Viewport {
     this.renderer.setSize(window.innerWidth, window.innerHeight)
   }
 
-  /** dayFraction: 0 = midnight, 0.5 = noon. */
-  updateDayCycle(dayFraction: number): void {
+  /** dayFraction: 0 = midnight, 0.5 = noon. Rain flattens and greys the light. */
+  updateDayCycle(dayFraction: number, rainIntensity = 0): void {
     const sunAngle = (dayFraction - 0.25) * Math.PI * 2
     const height = Math.sin(sunAngle)
     const daylight = clamp01(height * 1.6 + 0.18)
@@ -53,13 +54,18 @@ export class Viewport {
       Math.max(height, -0.2) * 320,
       120,
     )
-    this.sun.intensity = lerp(0.05, 1.55, daylight)
-    this.ambient.intensity = lerp(0.28, 0.95, daylight)
+    this.sun.intensity = lerp(0.05, 1.55, daylight) * (1 - rainIntensity * 0.7)
+    this.ambient.intensity = lerp(0.28, 0.95, daylight) * (1 - rainIntensity * 0.25)
 
     this.skyColor.copy(NIGHT_SKY).lerp(DAY_SKY, daylight)
-    this.skyColor.lerp(DUSK_SKY, duskness * 0.6)
+    this.skyColor.lerp(DUSK_SKY, duskness * 0.6 * (1 - rainIntensity))
+    this.skyColor.lerp(RAIN_SKY, rainIntensity * 0.75)
     this.scene.background = this.skyColor
-    if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(this.skyColor)
+    if (this.scene.fog) {
+      const fog = this.scene.fog as THREE.Fog
+      fog.color.copy(this.skyColor)
+      fog.far = lerp(620, 300, rainIntensity)
+    }
   }
 
   render(): void {

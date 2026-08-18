@@ -89,13 +89,43 @@ const buildLabel = (text: string, x: number, y: number, z: number): THREE.Sprite
 export class StructureView {
   readonly group = new THREE.Group()
 
-  constructor(field: Heightfield, buildings: readonly Building[]) {
-    for (const building of buildings) {
-      this.group.add(buildMesh(building, field.sample(building.x, building.z)))
-    }
+  constructor(
+    private readonly field: Heightfield,
+    buildings: readonly Building[],
+  ) {
+    for (const building of buildings) this.addBuilding(building)
+  }
+
+  addBuilding(building: Building): void {
+    this.group.add(buildMesh(building, this.field.sample(building.x, building.z)))
   }
 
   addLabel(text: string, x: number, z: number, height: number): void {
     this.group.add(buildLabel(text, x, height, z))
   }
+
+  /** A few dark tents and a cold fire: something the player can stumble on. */
+  addBanditCamp(x: number, z: number): void {
+    const group = new THREE.Group()
+    const canvas = BUILD_TENT_MATERIAL
+    for (const [dx, dz] of [
+      [0, 0],
+      [3.5, 1.5],
+      [-2.5, 2.8],
+    ]) {
+      const tent = new THREE.Mesh(new THREE.ConeGeometry(1.8, 2.2, 4), canvas)
+      tent.position.set(x + dx, this.field.sample(x + dx, z + dz) + 1.1, z + dz)
+      tent.rotation.y = Math.PI / 4
+      group.add(tent)
+    }
+    const fire = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.7, 0.9, 0.3, 8),
+      new THREE.MeshLambertMaterial({ color: 0x2b2320 }),
+    )
+    fire.position.set(x + 0.8, this.field.sample(x + 0.8, z + 1.6) + 0.15, z + 1.6)
+    group.add(fire)
+    this.group.add(group)
+  }
 }
+
+const BUILD_TENT_MATERIAL = new THREE.MeshLambertMaterial({ color: 0x4a4438 })

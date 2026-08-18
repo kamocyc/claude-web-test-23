@@ -10,9 +10,9 @@ import type { Heightfield } from '../world/heightfield'
 import { generateWorld, type WorldLayout } from '../world/terrainGen'
 import type { TileGrid } from '../world/tileGrid'
 import { PathFinder } from '../roads/pathfinding'
+import { applyTraffic, repairTiles, stepRoadWear } from '../roads/wear'
 import { RoadClass } from '../world/tileGrid'
 import { AgentKind, AgentState, AgentSystem, type Agent } from './agents'
-import type { Building } from './buildings'
 import { LogisticsSystem, type HaulOrder } from './logistics'
 import { findStopTile } from './navigation'
 import { stepProduction } from './production'
@@ -20,7 +20,11 @@ import { RESOURCE_INFO, Resource } from './resources'
 import { FARM_VILLAGE, MINE_VILLAGE, buildSettlement } from './scenario'
 import type { Settlement } from './settlement'
 import type { StockHolder } from './stock'
+import { BanditSystem } from './bandits'
+import { PLACEABLE, StructureSite } from './structureSite'
 import { VEHICLES, VehicleType } from './vehicles'
+import { WeatherSystem } from './weather'
+import { BUILDINGS, BuildingType, type Building } from './buildings'
 import type { TilePos } from '../roads/tileLine'
 
 /** How many villagers the player is worth when they work a site themselves. */
@@ -42,10 +46,17 @@ export class World {
   readonly settlements = new Map<string, Settlement>()
   readonly buildings: Building[] = []
   readonly roads = new RoadNetwork()
+  readonly weather = new WeatherSystem()
+  readonly bandits: BanditSystem
   readonly finder: PathFinder
   readonly agents = new AgentSystem(this)
   readonly logistics = new LogisticsSystem(this)
   readonly sites: ConstructionSite[] = []
+  readonly structureSites: StructureSite[] = []
+  /** Tile indices carrying a built road, so wear only visits what exists. */
+  readonly roadTiles: number[] = []
+  /** Buildings finished this tick, for the renderer to pick up. */
+  readonly newBuildings: Building[] = []
   /** One-off story beats already announced. */
   readonly milestones = new Set<string>()
   /** Tile keys still waiting to be built, for the construction overlay. */
@@ -82,6 +93,7 @@ export class World {
     }
 
     this.finder = new PathFinder(this)
+    this.bandits = new BanditSystem(generated.layout.banditCamp)
 
     const agentCounts = options.spawnAgents === false ? [] : ([
       ['farm', 3, 2, 3],
@@ -100,9 +112,22 @@ export class World {
     }
   }
 
-  /** Settlements and construction sites both accept and release goods. */
+  /** Settlements and every kind of work site accept and release goods. */
   holder(id: string): StockHolder | null {
-    return this.settlements.get(id) ?? this.sites.find((site) => site.id === id) ?? null
+    return (
+      this.settlements.get(id) ??
+      this.sites.find((site) => site.id === id) ??
+      this.structureSites.find((site) => site.id === id) ??
+      null
+    )
+  }
+
+  /** Watchtowers and inns that make a stretch of road safer. */
+  watchers(): Building[] {
+    return this.buildings.filter(
+      (building) =>
+        building.type === BuildingType.Watchtower || building.type === BuildingType.Inn,
+    )
   }
 
   unitWeight(resource: Resource): number {
@@ -153,6 +178,25 @@ export class World {
     } else {
       agent.explain.routeNote = { kind: 'shortest' }
     }
+  }
+
+  /** A hauler has been robbed: the cargo is gone and the journey is over. */
+  onRobbed(agent: Agent): void {
+    const resource = agent.cargoResource
+    const amount = agent.cargoAmount
+    agent.cargoResource = null
+    agent.cargoAmount = 0
+    agent.order = null
+    agent.explain.stuck = { kind: 'robbed' }
+    agent.explain.cargoResource = null
+    agent.explain.cargoAmount = 0
+    this.agents.sendHome(agent)
+    if (resource === null) return
+    const info = RESOURCE_INFO[resource]
+    this.log(
+      'bad',
+      `${this.placeName({ tx: Math.floor(agent.x / 2), tz: Math.floor(agent.z / 2) })}で盗賊に襲われた。${info.label} ${Math.round(amount)}${info.unit} を奪われた。`,
+    )
   }
 
   /** Called when cargo actually lands in a store - the moment worth noticing. */
@@ -230,15 +274,105 @@ export class World {
     return site
   }
 
-  /** The player working the site by hand, in person-hours. */
-  applyPlayerLabour(x: number, z: number, personHours: number): ConstructionSite | null {
+  /**
+   * The player working by hand, in person-hours. Whatever is under their feet:
+   * a road being built, a building going up, or a worn surface to patch.
+   */
+  applyPlayerLabour(x: number, z: number, personHours: number): void {
     for (const site of this.sites) {
       if (site.done) continue
       if (Math.hypot(site.x - x, site.z - z) > 9) continue
       this.completeTiles(site, site.applyLabour(personHours, true))
-      return site
+      return
     }
-    return null
+    for (const site of this.structureSites) {
+      if (site.done) continue
+      if (Math.hypot(site.x - x, site.z - z) > 9) continue
+      if (site.applyLabour(personHours, true)) this.finishStructure(site)
+      return
+    }
+    this.repairAround(x, z, personHours)
+  }
+
+  /** Patch up worn road within a few metres of the player. */
+  repairAround(x: number, z: number, personHours: number): number {
+    const cx = Math.floor(x / 2)
+    const cz = Math.floor(z / 2)
+    const indices: number[] = []
+    for (let dz = -2; dz <= 2; dz++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const tx = cx + dx
+        const tz = cz + dz
+        if (!this.grid.inBounds(tx, tz) || !this.grid.hasRoad(tx, tz)) continue
+        indices.push(this.grid.index(tx, tz))
+      }
+    }
+    return repairTiles(this.grid, indices, personHours, (tx, tz) => this.markTileDirty(tx, tz))
+  }
+
+  /** Site a public building along the road. */
+  placeStructure(type: BuildingType, x: number, z: number): StructureSite | null {
+    if (!PLACEABLE[type]) return null
+    const site = new StructureSite(`structure${this.nextSiteId++}`, type, x, z)
+    this.structureSites.push(site)
+    this.log('info', `${site.label} の建設地を決めた`)
+    return site
+  }
+
+  private finishStructure(site: StructureSite): void {
+    const def = BUILDINGS[site.type]
+    const building: Building = {
+      id: 10000 + this.structureSites.length + this.buildings.length,
+      type: site.type,
+      settlementId: this.nearestSettlementId(site.x, site.z),
+      x: site.x,
+      z: site.z,
+      activity: 0,
+      idleReason: null,
+    }
+    this.buildings.push(building)
+    this.newBuildings.push(building)
+
+    const radius = def.radius
+    for (let tz = Math.floor((site.z - radius) / 2); tz <= Math.floor((site.z + radius) / 2); tz++) {
+      for (let tx = Math.floor((site.x - radius) / 2); tx <= Math.floor((site.x + radius) / 2); tx++) {
+        if (!this.grid.inBounds(tx, tz)) continue
+        if (this.grid.hasRoad(tx, tz)) continue
+        const index = this.grid.index(tx, tz)
+        this.grid.blocked[index] = 1
+        this.grid.structure[index] = building.id
+      }
+    }
+
+    this.structureSites.splice(this.structureSites.indexOf(site), 1)
+    this.log('good', `${site.label} が完成した`)
+  }
+
+  nearestSettlementId(x: number, z: number): string {
+    let best = 'farm'
+    let bestDistance = Number.POSITIVE_INFINITY
+    for (const settlement of this.settlements.values()) {
+      const distance = Math.hypot(settlement.x - x, settlement.z - z)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = settlement.id
+      }
+    }
+    return best
+  }
+
+  consumeNewBuildings(): Building[] {
+    const list = this.newBuildings.slice()
+    this.newBuildings.length = 0
+    return list
+  }
+
+  /** Traffic crossing a tile: wear, and the tonnage that attracts bandits. */
+  noteTraffic(index: number, tonnes: number): void {
+    applyTraffic(this.grid, index, tonnes)
+    if (this.bandits.noteTraffic(tonnes)) {
+      this.log('warn', '街道の荷が増えた。谷に盗賊が目をつけたらしい。')
+    }
   }
 
   /** Write one finished tile into the world: terraform, surface, open to traffic. */
@@ -262,9 +396,11 @@ export class World {
         if (Math.abs(this.field.tileHeight(shoulder.tx, shoulder.tz) - tile.targetHeight) > 2) continue
         this.field.setTileHeight(shoulder.tx, shoulder.tz, tile.targetHeight)
         this.grid.setRoad(shoulder.tx, shoulder.tz, spec.surface, spec.roadClass, site.edgeId)
+        this.roadTiles.push(shoulderIndex)
         this.markTileDirty(shoulder.tx, shoulder.tz)
       }
     }
+    this.roadTiles.push(index)
     this.plannedTileKeys.delete(tileKey(tile.tx, tile.tz))
     this.markTileDirty(tile.tx, tile.tz)
   }
@@ -284,6 +420,13 @@ export class World {
     this.clock.advance(dt)
     const hours = (dt * GAME_SECONDS_PER_SIM_SECOND) / GAME_HOUR
 
+    if (this.weather.step(hours, this.rng)) {
+      this.log('info', `天気が${this.weather.label}になった`)
+    }
+    stepRoadWear(this.grid, this.roadTiles, hours, this.weather.intensity, (tx, tz) =>
+      this.markTileDirty(tx, tz),
+    )
+
     stepProduction(this.settlements, this.buildings, hours)
     for (const settlement of this.settlements.values()) settlement.consumeFood(hours)
 
@@ -292,15 +435,25 @@ export class World {
 
     // A site only advances while builders are actually standing on it.
     for (const site of this.sites) site.workers = 0
+    for (const site of this.structureSites) site.workers = 0
     for (const agent of this.agents.agents) {
       if (agent.state !== AgentState.Working || !agent.siteId) continue
-      const site = this.sites.find((candidate) => candidate.id === agent.siteId)
-      if (site) site.workers++
+      const road = this.sites.find((candidate) => candidate.id === agent.siteId)
+      if (road) {
+        road.workers++
+        continue
+      }
+      const structure = this.structureSites.find((candidate) => candidate.id === agent.siteId)
+      if (structure) structure.workers++
     }
 
     for (const site of this.sites.slice()) {
       if (site.done) continue
       this.completeTiles(site, site.applyLabour(site.workers * hours, false))
+    }
+    for (const site of this.structureSites.slice()) {
+      if (site.done) continue
+      if (site.applyLabour(site.workers * hours, false)) this.finishStructure(site)
     }
     if (this.playerWork.active) {
       this.applyPlayerLabour(this.playerWork.x, this.playerWork.z, PLAYER_LABOUR_RATE * hours)

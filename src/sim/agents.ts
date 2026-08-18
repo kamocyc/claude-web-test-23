@@ -157,6 +157,7 @@ export class AgentSystem {
       case AgentState.ToSite:
       case AgentState.Returning:
         if (this.advance(agent, dt)) this.onArrival(agent)
+        else this.checkAmbush(agent, dt)
         break
       case AgentState.Loading:
       case AgentState.Unloading:
@@ -239,7 +240,22 @@ export class AgentSystem {
     if (edgeId < 0) return
     const edge = this.world.roads.get(edgeId)
     if (!edge) return
-    edge.traffic += grossWeight(agent.vehicle, agent.loadKg) / 1000
+    const tonnes = grossWeight(agent.vehicle, agent.loadKg) / 1000
+    edge.traffic += tonnes
+    this.world.noteTraffic(index, tonnes)
+  }
+
+  /** Cargo on a lonely stretch at night is what bandits are waiting for. */
+  private checkAmbush(agent: Agent, dt: number): void {
+    if (agent.cargoResource === null || agent.cargoAmount <= 0) return
+    const danger = this.world.bandits.dangerAt(
+      agent.x,
+      agent.z,
+      this.world.clock.isNight,
+      this.world.watchers(),
+    )
+    if (!this.world.bandits.rolls(danger, dt, this.world.rng)) return
+    this.world.onRobbed(agent)
   }
 
   private noteDelay(agent: Agent, tile: TilePos, seconds: number): void {

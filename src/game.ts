@@ -8,6 +8,7 @@ import { Markers } from './render/markers'
 import { UNDER_CONSTRUCTION_COLOR } from './render/palette'
 import { Viewport } from './render/renderer'
 import { StructureView } from './render/structureView'
+import { WeatherView } from './render/weatherView'
 import { TerrainMesh } from './render/terrainMesh'
 import { buildWaterMesh } from './render/water'
 import { World } from './sim/world'
@@ -31,6 +32,8 @@ export class Game {
   readonly buildPanel: BuildPanel
   readonly inspector: Inspector
   readonly agentView = new AgentView()
+  readonly weatherView = new WeatherView()
+  private readonly structures: StructureView
 
   private lastFrame = performance.now()
   private previousSpeed: SpeedStep = 1
@@ -49,6 +52,8 @@ export class Game {
       this.viewport.renderer.domElement,
     )
     const structures = new StructureView(this.world.field, this.world.buildings)
+    this.structures = structures
+    structures.addBanditCamp(this.world.layout.banditCamp.x, this.world.layout.banditCamp.z)
     for (const settlement of this.world.settlements.values()) {
       structures.addLabel(
         settlement.label,
@@ -58,6 +63,7 @@ export class Game {
       )
     }
     this.viewport.scene.add(structures.group)
+    this.viewport.scene.add(this.weatherView.points)
 
     this.bridges = new BridgeView(this.world.grid)
     this.viewport.scene.add(this.bridges.group)
@@ -139,6 +145,8 @@ export class Game {
     this.terrainMesh.update()
 
     this.agentView.update(this.world.agents.agents)
+    for (const building of this.world.consumeNewBuildings()) this.structures.addBuilding(building)
+    this.weatherView.update(this.world.weather.intensity, this.viewport.camera, realDelta)
 
     this.markers.setAim(this.tools.tool === ToolId.Stake ? this.tools.aim : null)
     this.markers.update(this.tools.preview, this.tools.stakes, (tile) =>
@@ -152,7 +160,7 @@ export class Game {
       this.player.position.y + this.lookDirection.y,
       this.player.position.z + this.lookDirection.z,
     )
-    this.viewport.updateDayCycle(this.world.clock.dayFraction)
+    this.viewport.updateDayCycle(this.world.clock.dayFraction, this.world.weather.intensity)
     this.viewport.render()
     this.hud.update(this.world, realDelta)
     this.buildPanel.update(this.world, this.tools)

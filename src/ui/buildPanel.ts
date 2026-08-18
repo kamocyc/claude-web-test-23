@@ -129,7 +129,7 @@ export class BuildPanel {
     const plan = tools.preview
     const summary = plan && plan.segments.length > 0 ? planSummary(world, plan) : ''
     const commit = tools.committed
-      ? `<div class="row ${tools.committed.buildable ? 'good' : 'bad'}">Enter で着工（杭 ${tools.stakes.length} 本）　<span class="muted">右クリック/Backspace で1本戻す・Esc で破棄</span></div>`
+      ? `<div class="row ${tools.committed.buildable ? 'good' : 'bad'}">Enter で着工（杭 ${tools.stakes.length} 本）　<span class="muted">右クリック/Backspace で1本戻す・X で破棄</span></div>`
       : '<div class="row muted">もう1本打つと着工できる</div>'
     return specLine + summary + commit
   }

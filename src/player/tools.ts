@@ -66,18 +66,12 @@ export class ToolBelt {
     document.addEventListener('keydown', this.onKeyDown)
     document.addEventListener('mousedown', this.onMouseDown)
     document.addEventListener('mouseup', this.onMouseUp)
-    document.addEventListener('contextmenu', this.onContextMenu)
-  }
-
-  private onContextMenu = (event: MouseEvent): void => {
-    if (this.player.locked) event.preventDefault()
   }
 
   dispose(): void {
     document.removeEventListener('keydown', this.onKeyDown)
     document.removeEventListener('mousedown', this.onMouseDown)
     document.removeEventListener('mouseup', this.onMouseUp)
-    document.removeEventListener('contextmenu', this.onContextMenu)
   }
 
   get spec() {
@@ -166,7 +160,7 @@ export class ToolBelt {
       case 'Enter':
         this.commit()
         break
-      case 'Escape':
+      case 'KeyX':
         this.stakes.length = 0
         break
       case 'Backspace':

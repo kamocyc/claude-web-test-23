@@ -1,14 +1,10 @@
-import { Resource } from '../../sim/resources'
+import { ALL_RESOURCES, RESOURCE_INFO, type Resource } from '../../sim/resources'
 import { RoadSurface } from '../../world/tileGrid'
 
-export const RESOURCE_NAMES: Record<Resource, string> = {
-  [Resource.Wheat]: '小麦',
-  [Resource.Food]: '食料',
-  [Resource.IronOre]: '鉄鉱石',
-  [Resource.Tools]: '工具',
-  [Resource.Timber]: '木材',
-  [Resource.Stone]: '石材',
-}
+/** Resource names live with the resource data; this keeps one source of truth. */
+export const RESOURCE_NAMES = Object.fromEntries(
+  ALL_RESOURCES.map((resource) => [resource, RESOURCE_INFO[resource].label]),
+) as Record<Resource, string>
 
 export const ROAD_SURFACE_NAMES: Record<RoadSurface, string> = {
   [RoadSurface.None]: 'なし',

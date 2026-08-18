@@ -18,6 +18,8 @@ export const ALL_RESOURCES: readonly Resource[] = [
 ]
 
 export interface ResourceInfo {
+  /** Display name; the game is played in Japanese. */
+  readonly label: string
   /** Mass of one unit in kilograms - this is what limits what a vehicle can take. */
   readonly weight: number
   /** Counting word used in Japanese UI text ("小麦 12 袋"). */
@@ -25,12 +27,12 @@ export interface ResourceInfo {
 }
 
 export const RESOURCE_INFO: Record<Resource, ResourceInfo> = {
-  [Resource.Wheat]: { weight: 12, unit: '袋' },
-  [Resource.Food]: { weight: 10, unit: '箱' },
-  [Resource.IronOre]: { weight: 25, unit: '籠' },
-  [Resource.Tools]: { weight: 8, unit: '組' },
-  [Resource.Timber]: { weight: 30, unit: '本' },
-  [Resource.Stone]: { weight: 45, unit: '個' },
+  [Resource.Wheat]: { label: '小麦', weight: 12, unit: '袋' },
+  [Resource.Food]: { label: '食料', weight: 10, unit: '箱' },
+  [Resource.IronOre]: { label: '鉄鉱石', weight: 25, unit: '籠' },
+  [Resource.Tools]: { label: '工具', weight: 8, unit: '組' },
+  [Resource.Timber]: { label: '木材', weight: 30, unit: '本' },
+  [Resource.Stone]: { label: '石材', weight: 45, unit: '個' },
 }
 
 export type Stock = Record<Resource, number>

@@ -10,9 +10,12 @@ const buildingOf = (world: World, type: BuildingType) => {
   return found
 }
 
+// Production only: no haulers, so nothing can cross the valley.
+const isolatedWorld = () => new World(undefined, { spawnAgents: false })
+
 describe('isolated villages', () => {
   it('stalls the mine village because nothing feeds it', () => {
-    const world = new World()
+    const world = isolatedWorld()
     advanceGameHours(world, 24)
 
     const mine = world.settlement('mine')
@@ -27,7 +30,7 @@ describe('isolated villages', () => {
   })
 
   it('lets the farm village build a food surplus it cannot deliver', () => {
-    const world = new World()
+    const world = isolatedWorld()
     advanceGameHours(world, 24)
 
     const farm = world.settlement('farm')
@@ -36,7 +39,7 @@ describe('isolated villages', () => {
   })
 
   it('shrinks a village that runs out of food', () => {
-    const world = new World()
+    const world = isolatedWorld()
     const before = world.settlement('mine').population
     advanceGameHours(world, 48)
     expect(world.settlement('mine').population).toBeLessThan(before)

@@ -25,7 +25,7 @@ export class Viewport {
     this.camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 900)
     this.scene.fog = new THREE.Fog(DAY_SKY.getHex(), 140, 620)
 
-    this.ambient = new THREE.HemisphereLight(0xcfe4ff, 0x4a4030, 0.75)
+    this.ambient = new THREE.HemisphereLight(0xcfe4ff, 0x6a5c48, 0.9)
     this.scene.add(this.ambient)
 
     this.sun = new THREE.DirectionalLight(0xfff2d8, 1.5)
@@ -54,7 +54,7 @@ export class Viewport {
       120,
     )
     this.sun.intensity = lerp(0.05, 1.55, daylight)
-    this.ambient.intensity = lerp(0.22, 0.8, daylight)
+    this.ambient.intensity = lerp(0.28, 0.95, daylight)
 
     this.skyColor.copy(NIGHT_SKY).lerp(DAY_SKY, daylight)
     this.skyColor.lerp(DUSK_SKY, duskness * 0.6)

@@ -52,7 +52,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     workers: 6,
     recipe: {
       inputs: {},
-      outputs: { [Resource.Wheat]: 0.9 },
+      outputs: { [Resource.Wheat]: 1.6 },
       boostedBy: { resource: Resource.Tools, multiplier: 1.7, wearPerHour: 0.02 },
     },
   },
@@ -61,7 +61,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     radius: 3.5,
     height: 4.5,
     workers: 3,
-    recipe: { inputs: { [Resource.Wheat]: 0.7 }, outputs: { [Resource.Food]: 0.9 } },
+    recipe: { inputs: { [Resource.Wheat]: 1.2 }, outputs: { [Resource.Food]: 1.5 } },
   },
   [BuildingType.Woodcutter]: {
     label: '木こり小屋',

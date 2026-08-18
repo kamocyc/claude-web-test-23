@@ -8,11 +8,20 @@ import { BRIDGE_SPECS } from '../roads/roadSpec'
 import { tileKey } from '../roads/tileLine'
 import type { Heightfield } from '../world/heightfield'
 import { generateWorld, type WorldLayout } from '../world/terrainGen'
-import { RoadClass, type TileGrid } from '../world/tileGrid'
+import type { TileGrid } from '../world/tileGrid'
+import { PathFinder } from '../roads/pathfinding'
+import { RoadClass } from '../world/tileGrid'
+import { AgentKind, AgentState, AgentSystem, type Agent } from './agents'
 import type { Building } from './buildings'
+import { LogisticsSystem, type HaulOrder } from './logistics'
+import { findStopTile } from './navigation'
 import { stepProduction } from './production'
+import { RESOURCE_INFO, Resource } from './resources'
 import { FARM_VILLAGE, MINE_VILLAGE, buildSettlement } from './scenario'
 import type { Settlement } from './settlement'
+import type { StockHolder } from './stock'
+import { VEHICLES, VehicleType } from './vehicles'
+import type { TilePos } from '../roads/tileLine'
 
 /** How many villagers the player is worth when they work a site themselves. */
 export const PLAYER_LABOUR_RATE = 12
@@ -33,6 +42,9 @@ export class World {
   readonly settlements = new Map<string, Settlement>()
   readonly buildings: Building[] = []
   readonly roads = new RoadNetwork()
+  readonly finder: PathFinder
+  readonly agents = new AgentSystem(this)
+  readonly logistics = new LogisticsSystem(this)
   readonly sites: ConstructionSite[] = []
   /** Tile keys still waiting to be built, for the construction overlay. */
   readonly plannedTileKeys = new Set<number>()
@@ -43,7 +55,7 @@ export class World {
   /** Tiles changed this tick, so the renderer can repaint just those chunks. */
   private readonly dirtyTiles: Array<[number, number]> = []
 
-  constructor(seed = 20260817) {
+  constructor(seed = 20260817, options: { spawnAgents?: boolean } = {}) {
     this.seed = seed
     const generated = generateWorld(seed)
     this.field = generated.field
@@ -66,6 +78,92 @@ export class World {
       this.settlements.set(built.settlement.id, built.settlement)
       this.buildings.push(...built.buildings)
     }
+
+    this.finder = new PathFinder(this)
+
+    const agentCounts = options.spawnAgents === false ? [] : ([
+      ['farm', 3, 2, 3],
+      ['mine', 2, 1, 3],
+    ] as const)
+    for (const [id, porters, carts, builders] of agentCounts) {
+      for (let i = 0; i < porters; i++) {
+        this.agents.spawn(AgentKind.Hauler, VehicleType.Porter, id)
+      }
+      for (let i = 0; i < carts; i++) {
+        this.agents.spawn(AgentKind.Hauler, VehicleType.Handcart, id)
+      }
+      for (let i = 0; i < builders; i++) {
+        this.agents.spawn(AgentKind.Builder, VehicleType.Porter, id)
+      }
+    }
+  }
+
+  /** Settlements and construction sites both accept and release goods. */
+  holder(id: string): StockHolder | null {
+    return this.settlements.get(id) ?? this.sites.find((site) => site.id === id) ?? null
+  }
+
+  unitWeight(resource: Resource): number {
+    return RESOURCE_INFO[resource].weight
+  }
+
+  /** Where a given vehicle can actually stop at a settlement or work site. */
+  stopTileFor(holderId: string, vehicleType: VehicleType): TilePos | null {
+    const holder = this.holder(holderId)
+    if (!holder) return null
+    const required = VEHICLES[vehicleType].requiresRoad
+    return findStopTile(this.grid, holder.x, holder.z, {
+      requireRoadClass: required,
+      maxRadius: required === RoadClass.None ? 6 : 10,
+    })
+  }
+
+  /** Nearest named place to a tile, for delay messages. */
+  placeName(tile: TilePos): string {
+    let best = '街道'
+    let bestDistance = Number.POSITIVE_INFINITY
+    const x = tile.tx * 2
+    const z = tile.tz * 2
+    for (const settlement of this.settlements.values()) {
+      const distance = Math.hypot(settlement.x - x, settlement.z - z)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        best = settlement.label
+      }
+    }
+    return bestDistance < 90 ? `${best}付近` : '街道'
+  }
+
+  /**
+   * Fills in why the hauler took this route: if a walker could get there much
+   * faster, the cart is going the long way for a reason worth stating.
+   */
+  describeRoute(agent: Agent): void {
+    const start = this.agents.currentTile(agent)
+    const end = agent.path[agent.path.length - 1]
+    if (!end) return
+    const onFoot = this.finder.find(start, end, VEHICLES[VehicleType.Porter], 0)
+    if (onFoot.failure === null && agent.explain.routeSeconds > onFoot.seconds * 1.08) {
+      agent.explain.routeNote = {
+        kind: 'onlyLegalRoute',
+        slowerBySeconds: agent.explain.routeSeconds - onFoot.seconds,
+      }
+    } else {
+      agent.explain.routeNote = { kind: 'shortest' }
+    }
+  }
+
+  /** Called when cargo actually lands in a store - the moment worth noticing. */
+  onDelivery(agent: Agent, order: HaulOrder, delivered: number): void {
+    if (delivered <= 0) return
+    const to = this.holder(order.toId)
+    const from = this.holder(order.fromId)
+    if (!to || !from) return
+    const info = RESOURCE_INFO[order.resource]
+    this.log(
+      'good',
+      `${agent.vehicle.label}が${from.label}から${to.label}へ ${info.label} ${Math.round(delivered)}${info.unit} を届けた`,
+    )
   }
 
   settlement(id: string): Settlement {
@@ -101,8 +199,6 @@ export class World {
       this.plannedTileKeys.add(tileKey(tile.tx, tile.tz))
       this.markTileDirty(tile.tx, tile.tz)
     }
-    // Until villagers are dispatched, a standing village crew keeps the work moving.
-    site.workers = 4
     this.sites.push(site)
     this.log(
       'info',
@@ -167,6 +263,17 @@ export class World {
 
     stepProduction(this.settlements, this.buildings, hours)
     for (const settlement of this.settlements.values()) settlement.consumeFood(hours)
+
+    this.agents.step(dt)
+    this.logistics.step(hours)
+
+    // A site only advances while builders are actually standing on it.
+    for (const site of this.sites) site.workers = 0
+    for (const agent of this.agents.agents) {
+      if (agent.state !== AgentState.Working || !agent.siteId) continue
+      const site = this.sites.find((candidate) => candidate.id === agent.siteId)
+      if (site) site.workers++
+    }
 
     for (const site of this.sites.slice()) {
       if (site.done) continue

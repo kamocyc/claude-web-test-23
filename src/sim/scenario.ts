@@ -20,7 +20,7 @@ export const FARM_VILLAGE: SettlementSpec = {
   id: 'farm',
   label: '麦谷の農村',
   population: 16,
-  reserveDays: 2,
+  reserveDays: 1.5,
   startingStock: {
     [Resource.Wheat]: 20,
     [Resource.Food]: 26,

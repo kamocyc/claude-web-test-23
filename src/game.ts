@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { SIM_DT, SPEED_STEPS, type SpeedStep } from './core/clock'
 import { PlayerController } from './player/controller'
 import { ToolBelt, ToolId } from './player/tools'
+import { AgentView } from './render/agentView'
 import { BridgeView } from './render/bridgeView'
 import { Markers } from './render/markers'
 import { UNDER_CONSTRUCTION_COLOR } from './render/palette'
@@ -10,8 +11,10 @@ import { StructureView } from './render/structureView'
 import { TerrainMesh } from './render/terrainMesh'
 import { buildWaterMesh } from './render/water'
 import { World } from './sim/world'
+import { pickTarget } from './player/picking'
 import { BuildPanel } from './ui/buildPanel'
 import { Hud } from './ui/hud'
+import { Inspector } from './ui/inspector'
 import { tileKey } from './roads/tileLine'
 import { tileSurfaceHeight } from './world/surface'
 
@@ -26,6 +29,8 @@ export class Game {
   readonly markers: Markers
   readonly bridges: BridgeView
   readonly buildPanel: BuildPanel
+  readonly inspector: Inspector
+  readonly agentView = new AgentView()
 
   private lastFrame = performance.now()
   private previousSpeed: SpeedStep = 1
@@ -60,9 +65,12 @@ export class Game {
     this.markers = new Markers()
     this.viewport.scene.add(this.markers.group)
 
+    this.viewport.scene.add(this.agentView.group)
+
     this.tools = new ToolBelt(this.world, this.player)
     this.hud = new Hud(uiRoot)
     this.buildPanel = new BuildPanel(uiRoot)
+    this.inspector = new Inspector(uiRoot)
 
     // Tiles that are staked but not yet built are tinted in the terrain itself.
     this.terrainMesh.setOverlay((tx, tz) =>
@@ -128,6 +136,8 @@ export class Game {
     if (bridgeChanged) this.bridges.rebuild()
     this.terrainMesh.update()
 
+    this.agentView.update(this.world.agents.agents)
+
     this.markers.setAim(this.tools.tool === ToolId.Stake ? this.tools.aim : null)
     this.markers.update(this.tools.preview, this.tools.stakes, (tile) =>
       tileSurfaceHeight(this.world.field, this.world.grid, tile.tx, tile.tz),
@@ -144,5 +154,11 @@ export class Game {
     this.viewport.render()
     this.hud.update(this.world, realDelta)
     this.buildPanel.update(this.world, this.tools)
+    this.inspector.update(
+      this.world,
+      this.tools.tool === ToolId.Inspect
+        ? pickTarget(this.world, this.player.position, this.lookDirection)
+        : null,
+    )
   }
 }

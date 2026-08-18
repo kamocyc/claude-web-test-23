@@ -108,3 +108,10 @@ canvas { display: block; }
 }
 #build-panel .row { gap: 8px; flex-wrap: wrap; }
 #build-panel .row .name { flex: 0 0 auto; }
+
+#inspector {
+  right: 14px;
+  top: 400px;
+  width: 320px;
+}
+#inspector .row { flex-wrap: wrap; gap: 6px; }

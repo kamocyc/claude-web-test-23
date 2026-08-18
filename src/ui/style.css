@@ -98,3 +98,13 @@ canvas { display: block; }
   padding: 0 5px;
   font-size: 11px;
 }
+
+#build-panel {
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  min-width: 520px;
+  max-width: 760px;
+}
+#build-panel .row { gap: 8px; flex-wrap: wrap; }
+#build-panel .row .name { flex: 0 0 auto; }

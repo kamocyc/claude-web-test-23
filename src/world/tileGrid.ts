@@ -46,6 +46,8 @@ export class TileGrid {
   readonly trample: Float32Array
   /** Water surface elevation where the tile is water, else 0. */
   readonly waterLevel: Float32Array
+  /** Bridge deck elevation where a bridge stands, else 0. */
+  readonly deckHeight: Float32Array
   readonly structure: Int32Array
   /** 1 = impassable (building footprint, cliff face). */
   readonly blocked: Uint8Array
@@ -61,6 +63,7 @@ export class TileGrid {
     this.wetness = new Float32Array(n)
     this.trample = new Float32Array(n)
     this.waterLevel = new Float32Array(n)
+    this.deckHeight = new Float32Array(n)
     this.structure = new Int32Array(n).fill(-1)
     this.blocked = new Uint8Array(n)
   }

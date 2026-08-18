@@ -1,12 +1,19 @@
 import * as THREE from 'three'
 import { SIM_DT, SPEED_STEPS, type SpeedStep } from './core/clock'
 import { PlayerController } from './player/controller'
+import { ToolBelt, ToolId } from './player/tools'
+import { BridgeView } from './render/bridgeView'
+import { Markers } from './render/markers'
+import { UNDER_CONSTRUCTION_COLOR } from './render/palette'
 import { Viewport } from './render/renderer'
 import { StructureView } from './render/structureView'
 import { TerrainMesh } from './render/terrainMesh'
 import { buildWaterMesh } from './render/water'
 import { World } from './sim/world'
+import { BuildPanel } from './ui/buildPanel'
 import { Hud } from './ui/hud'
+import { tileKey } from './roads/tileLine'
+import { tileSurfaceHeight } from './world/surface'
 
 /** Wires the headless simulation to rendering, input and UI. */
 export class Game {
@@ -15,6 +22,10 @@ export class Game {
   readonly player: PlayerController
   readonly terrainMesh: TerrainMesh
   readonly hud: Hud
+  readonly tools: ToolBelt
+  readonly markers: Markers
+  readonly bridges: BridgeView
+  readonly buildPanel: BuildPanel
 
   private lastFrame = performance.now()
   private previousSpeed: SpeedStep = 1
@@ -43,7 +54,20 @@ export class Game {
     }
     this.viewport.scene.add(structures.group)
 
+    this.bridges = new BridgeView(this.world.grid)
+    this.viewport.scene.add(this.bridges.group)
+
+    this.markers = new Markers()
+    this.viewport.scene.add(this.markers.group)
+
+    this.tools = new ToolBelt(this.world, this.player)
     this.hud = new Hud(uiRoot)
+    this.buildPanel = new BuildPanel(uiRoot)
+
+    // Tiles that are staked but not yet built are tinted in the terrain itself.
+    this.terrainMesh.setOverlay((tx, tz) =>
+      this.world.plannedTileKeys.has(tileKey(tx, tz)) ? UNDER_CONSTRUCTION_COLOR : null,
+    )
 
     const spawn = this.world.layout.farmVillage
     this.player.spawnLookingAt(spawn.x + 34, spawn.z + 26, spawn.x, spawn.z)
@@ -84,15 +108,30 @@ export class Game {
   }
 
   private frame(realDelta: number): void {
+    this.world.playerWork = {
+      x: this.player.position.x,
+      z: this.player.position.z,
+      active: this.tools.tool === ToolId.Work && this.tools.working,
+    }
+
     const steps = this.world.clock.frame(realDelta)
     for (let i = 0; i < steps; i++) this.world.step(SIM_DT)
 
     this.player.update(realDelta)
+    this.tools.update()
 
+    let bridgeChanged = false
     for (const [tx, tz] of this.world.consumeDirtyTiles()) {
       this.terrainMesh.markTileDirty(tx, tz)
+      if (this.world.grid.isBridge(tx, tz)) bridgeChanged = true
     }
+    if (bridgeChanged) this.bridges.rebuild()
     this.terrainMesh.update()
+
+    this.markers.setAim(this.tools.tool === ToolId.Stake ? this.tools.aim : null)
+    this.markers.update(this.tools.preview, this.tools.stakes, (tile) =>
+      tileSurfaceHeight(this.world.field, this.world.grid, tile.tx, tile.tz),
+    )
 
     this.viewport.camera.position.copy(this.player.position)
     this.player.lookDirection(this.lookDirection)
@@ -104,5 +143,6 @@ export class Game {
     this.viewport.updateDayCycle(this.world.clock.dayFraction)
     this.viewport.render()
     this.hud.update(this.world, realDelta)
+    this.buildPanel.update(this.world, this.tools)
   }
 }

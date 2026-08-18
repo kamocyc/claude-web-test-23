@@ -77,8 +77,16 @@ export const stepCost = (
   const wetness = grid.wetness[index]
   const wetFactor = 1 - wetness * (1 - props.rainResistance) * 0.65
 
+  // Carrying more than the comfortable load slows the carrier proportionally.
+  const overload = loadKg > vehicle.capacityKg ? vehicle.capacityKg / loadKg : 1
   const speed =
-    vehicle.baseSpeed * props.speedFactor * gradeFactor * conditionFactor * wetFactor * waterPenalty
+    vehicle.baseSpeed *
+    props.speedFactor *
+    gradeFactor *
+    conditionFactor *
+    wetFactor *
+    waterPenalty *
+    overload
   if (speed <= 0.01) return IMPASSABLE
   return { seconds: TILE_SIZE / speed, blocked: null }
 }

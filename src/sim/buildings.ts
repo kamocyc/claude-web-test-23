@@ -68,7 +68,7 @@ export const BUILDINGS: Record<BuildingType, BuildingDef> = {
     radius: 3.5,
     height: 4,
     workers: 2,
-    recipe: { inputs: {}, outputs: { [Resource.Timber]: 0.35 } },
+    recipe: { inputs: {}, outputs: { [Resource.Timber]: 0.6 } },
   },
   [BuildingType.Mine]: {
     label: '鉱山',

@@ -24,7 +24,7 @@ import { VEHICLES, VehicleType } from './vehicles'
 import type { TilePos } from '../roads/tileLine'
 
 /** How many villagers the player is worth when they work a site themselves. */
-export const PLAYER_LABOUR_RATE = 12
+export const PLAYER_LABOUR_RATE = 16
 
 /**
  * The simulation world. Nothing in here (or anything it imports) may touch
@@ -46,6 +46,8 @@ export class World {
   readonly agents = new AgentSystem(this)
   readonly logistics = new LogisticsSystem(this)
   readonly sites: ConstructionSite[] = []
+  /** One-off story beats already announced. */
+  readonly milestones = new Set<string>()
   /** Tile keys still waiting to be built, for the construction overlay. */
   readonly plannedTileKeys = new Set<number>()
   /** Set by the player controller while they are working a site by hand. */
@@ -161,9 +163,30 @@ export class World {
     if (!to || !from) return
     const info = RESOURCE_INFO[order.resource]
     this.log(
-      'good',
+      'info',
       `${agent.vehicle.label}が${from.label}から${to.label}へ ${info.label} ${Math.round(delivered)}${info.unit} を届けた`,
     )
+    this.noteMilestone(agent, order)
+  }
+
+  /** The handful of deliveries that mean the valley has changed. */
+  private noteMilestone(agent: Agent, order: HaulOrder): void {
+    const reached = (key: string): boolean => {
+      if (this.milestones.has(key)) return false
+      this.milestones.add(key)
+      return true
+    }
+    const betweenVillages =
+      this.settlements.has(order.fromId) && this.settlements.has(order.toId) && order.fromId !== order.toId
+    if (agent.vehicleType === VehicleType.Handcart && betweenVillages && reached('firstCartDelivery')) {
+      this.log('good', '荷車が初めて村と村のあいだを往復した。')
+    }
+    if (order.toId === 'mine' && order.resource === Resource.Food && reached('foodToMine')) {
+      this.log('good', '鉱山村に食料が届いた。止まっていた鍛冶場が動き出す。')
+    }
+    if (order.toId === 'farm' && order.resource === Resource.Tools && reached('toolsToFarm')) {
+      this.log('good', '農村に鉄の農具が返ってきた。道がひとつの往復になった。')
+    }
   }
 
   settlement(id: string): Settlement {

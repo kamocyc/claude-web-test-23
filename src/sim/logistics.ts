@@ -76,7 +76,13 @@ export class LogisticsSystem {
           holder: settlement,
           resource,
           units: Math.ceil(shortfall),
-          priority: resource === Resource.Food ? 1 : 2,
+          // Food first, then whatever makes this village more productive.
+          priority:
+            resource === Resource.Food
+              ? 1
+              : resource === Resource.Tools && settlement.toolsUser
+                ? 1.5
+                : 2,
         })
       }
     }
@@ -85,10 +91,14 @@ export class LogisticsSystem {
   }
 
   private findSupplier(demand: Demand): { holder: StockHolder; available: number } | null {
+    // A village will dip into its own stores for a road it wants built, but it
+    // will not give away the food it is keeping back for itself.
+    const reserveFactor = demand.priority === 0 ? 0.15 : 1
     let best: { holder: StockHolder; available: number } | null = null
     for (const settlement of this.world.settlements.values()) {
       if (settlement.id === demand.holder.id) continue
-      const spare = settlement.stock[demand.resource] - settlement.targetStock(demand.resource)
+      const reserve = settlement.targetStock(demand.resource) * reserveFactor
+      const spare = settlement.stock[demand.resource] - reserve
       if (spare < MIN_UNITS) continue
       if (!best || spare > best.available) best = { holder: settlement, available: spare }
     }
@@ -185,7 +195,11 @@ export class LogisticsSystem {
   }
 
   private startOrder(agent: Agent, order: HaulOrder, pickup: { tx: number; tz: number }): boolean {
-    if (!this.world.agents.routeTo(agent, pickup)) return false
+    if (!this.world.agents.routeTo(agent, pickup)) {
+      // Parked off the road: wheel it out to the nearest usable way and retry.
+      if (!this.world.agents.moveToHomeStop(agent)) return false
+      if (!this.world.agents.routeTo(agent, pickup)) return false
+    }
     agent.order = order
     agent.state = AgentState.ToPickup
     agent.explain.fromLabel = this.world.holder(order.fromId)?.label ?? ''
@@ -200,7 +214,7 @@ export class LogisticsSystem {
   assignBuilders(): void {
     const sites = this.world.sites.filter((site) => !site.done)
     if (sites.length === 0) return
-    const perSite = 4
+    const perSite = 6
 
     const counts = new Map<string, number>()
     for (const agent of this.world.agents.agents) {

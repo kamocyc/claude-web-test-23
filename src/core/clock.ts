@@ -62,8 +62,10 @@ export class Clock {
   frame(realDelta: number): number {
     if (this.paused) return 0
     this.accumulator += Math.min(realDelta, 0.25) * this.speed
+    // The cap keeps a stalled tab from spiralling, but has to be loose enough
+    // that a slow machine can still honour a 4x speed setting.
     let steps = 0
-    while (this.accumulator >= SIM_DT && steps < 8) {
+    while (this.accumulator >= SIM_DT && steps < 16) {
       this.accumulator -= SIM_DT
       steps++
     }

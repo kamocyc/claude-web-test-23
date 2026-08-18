@@ -56,7 +56,7 @@ export const BRIDGE_SPECS: Record<BridgeSpecId, BridgeSpec> = {
     surface: RoadSurface.TimberBridge,
     maxLoadKg: 260,
     materialsPerTile: { [Resource.Timber]: 1.5 },
-    labourPerTile: 4,
+    labourPerTile: 2.6,
     maxSpanTiles: 14,
   },
   [BridgeSpecId.Stone]: {
@@ -65,7 +65,7 @@ export const BRIDGE_SPECS: Record<BridgeSpecId, BridgeSpec> = {
     surface: RoadSurface.StoneBridge,
     maxLoadKg: 900,
     materialsPerTile: { [Resource.Stone]: 2.2, [Resource.Timber]: 0.4 },
-    labourPerTile: 7,
+    labourPerTile: 4.5,
     maxSpanTiles: 22,
   },
 }
@@ -83,7 +83,7 @@ export const ROAD_SPECS: Record<RoadSpecId, RoadSpec> = {
     wearPerTonne: 0.02,
     gradeAllowance: 1,
     materialsPerTile: {},
-    labourPerTile: 0.7,
+    labourPerTile: 0.4,
     bridge: BridgeSpecId.Timber,
   },
   [RoadSpecId.DirtCartway]: {
@@ -97,8 +97,9 @@ export const ROAD_SPECS: Record<RoadSpecId, RoadSpec> = {
     rainResistance: 0.12,
     wearPerTonne: 0.018,
     gradeAllowance: 1,
-    materialsPerTile: { [Resource.Timber]: 0.1 },
-    labourPerTile: 1,
+    // An earth road costs work, not materials. Surfacing is what needs stone.
+    materialsPerTile: {},
+    labourPerTile: 0.55,
     bridge: BridgeSpecId.Timber,
   },
   [RoadSpecId.GravelCartway]: {
@@ -113,7 +114,7 @@ export const ROAD_SPECS: Record<RoadSpecId, RoadSpec> = {
     wearPerTonne: 0.009,
     gradeAllowance: 1.08,
     materialsPerTile: { [Resource.Stone]: 0.5 },
-    labourPerTile: 2.2,
+    labourPerTile: 1.3,
     bridge: BridgeSpecId.Timber,
   },
   [RoadSpecId.StoneCartway]: {
@@ -128,7 +129,7 @@ export const ROAD_SPECS: Record<RoadSpecId, RoadSpec> = {
     wearPerTonne: 0.004,
     gradeAllowance: 1.15,
     materialsPerTile: { [Resource.Stone]: 1.1, [Resource.Timber]: 0.1 },
-    labourPerTile: 3.6,
+    labourPerTile: 2.2,
     bridge: BridgeSpecId.Stone,
   },
 }

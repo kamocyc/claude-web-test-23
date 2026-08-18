@@ -91,20 +91,23 @@ describe('construction', () => {
   })
 
   it('stops at the work front when materials run out', () => {
-    const world = new World()
+    // Nobody hauling: the site only has what it was given, and a gravel
+    // surface eats stone the villages cannot spare.
+    const world = new World(undefined, { spawnAgents: false })
     const plan = planRoad(
       world.field,
       world.grid,
       [tileAt(130, 250), tileAt(170, 250)],
-      ROAD_SPECS[RoadSpecId.DirtCartway],
+      ROAD_SPECS[RoadSpecId.GravelCartway],
     )
     const site = world.startConstruction(plan)
-    site.stock[Resource.Timber] = 0.5
+    site.stock[Resource.Stone] = 1
 
-    advanceGameHours(world, 24)
+    world.playerWork = { x: site.x, z: site.z, active: true }
+    advanceGameHours(world, 12)
 
     expect(site.done).toBe(false)
-    expect(site.blockReason).toEqual({ kind: 'awaitingMaterials', resource: Resource.Timber })
+    expect(site.blockReason).toEqual({ kind: 'awaitingMaterials', resource: Resource.Stone })
     expect(site.progress()).toBeGreaterThan(0)
   })
 })

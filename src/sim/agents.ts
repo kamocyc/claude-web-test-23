@@ -105,6 +105,21 @@ export class AgentSystem {
     )
   }
 
+  /**
+   * Park an idle vehicle on the nearest way it can actually use. A cart left
+   * standing in the village yard has to be wheeled out to the road before it
+   * can set off; this does that, and only ever for an idle agent at home.
+   */
+  moveToHomeStop(agent: Agent): boolean {
+    if (!agent.idle) return false
+    const target = this.world.stopTileFor(agent.homeId, agent.vehicleType)
+    if (!target) return false
+    agent.x = tileToWorld(target.tx)
+    agent.z = tileToWorld(target.tz)
+    agent.y = tileSurfaceHeight(this.world.field, this.world.grid, target.tx, target.tz)
+    return true
+  }
+
   idleBuilders(): Agent[] {
     return this.agents.filter((agent) => agent.kind === AgentKind.Builder && agent.idle)
   }

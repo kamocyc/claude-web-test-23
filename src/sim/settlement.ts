@@ -74,10 +74,12 @@ export class Settlement implements StockHolder {
         return this.hasProducerOf(Resource.Tools) ? 20 : 4
       case Resource.Tools:
         return this.needsTools() ? 6 : 2
+      // Building materials: a working stock where they are produced, a small
+      // reserve elsewhere. Construction pulls what it needs on top of this.
       case Resource.Timber:
-        return 12
+        return this.producedResources.has(Resource.Timber) ? 10 : 4
       case Resource.Stone:
-        return 12
+        return this.producedResources.has(Resource.Stone) ? 10 : 4
       default:
         return 0
     }

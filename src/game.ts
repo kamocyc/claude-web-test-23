@@ -108,7 +108,9 @@ export class Game {
   start(): void {
     const loop = (now: number): void => {
       requestAnimationFrame(loop)
-      const realDelta = Math.min((now - this.lastFrame) / 1000, 0.1)
+      // Clamped so a backgrounded tab cannot jump the world forward, but loose
+      // enough that a slow frame rate still honours the chosen speed.
+      const realDelta = Math.min((now - this.lastFrame) / 1000, 0.25)
       this.lastFrame = now
       this.frame(realDelta)
     }

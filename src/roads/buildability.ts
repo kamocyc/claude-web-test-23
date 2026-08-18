@@ -9,7 +9,7 @@ import { tileLine, type TilePos } from './tileLine'
 /** Deepest cut or highest embankment a work crew can manage without a tunnel. */
 export const MAX_EARTHWORK = 3
 /** Person-hours per cubic metre of earth moved. */
-export const LABOUR_PER_CUBIC_METRE = 0.15
+export const LABOUR_PER_CUBIC_METRE = 0.1
 /** Deck clearance above the water surface. */
 export const BRIDGE_CLEARANCE = 1.4
 

@@ -49,6 +49,12 @@ export const emptyStock = (): Stock => ({
 export const cargoWeight = (resource: Resource, amount: number): number =>
   RESOURCE_INFO[resource].weight * amount
 
-/** How many units of a resource fit in a given carrying capacity. */
+/**
+ * How many units of a resource fit in a given carrying capacity.
+ *
+ * Always at least one: a person can shoulder a single beam that is heavier than
+ * a comfortable pack, just slowly. Without this a heavy material could never
+ * reach a bridge site, and the bridge needed to carry it could never be built.
+ */
 export const unitsThatFit = (resource: Resource, capacityKg: number): number =>
-  Math.floor(capacityKg / RESOURCE_INFO[resource].weight)
+  Math.max(1, Math.floor(capacityKg / RESOURCE_INFO[resource].weight))

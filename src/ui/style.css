@@ -77,3 +77,24 @@ canvas { display: block; }
   padding: 1px 6px;
   font-family: inherit;
 }
+
+#hud-clock { top: 14px; left: 14px; min-width: 210px; }
+#hud-villages { top: 14px; right: 14px; width: 260px; }
+#hud-events { left: 14px; bottom: 14px; width: 340px; }
+
+.row { display: flex; gap: 6px; align-items: baseline; }
+.row.big { font-size: 18px; font-weight: 600; letter-spacing: 0.04em; }
+.row.title { font-weight: 600; margin-bottom: 4px; }
+.row .name { flex: 1; color: var(--muted); }
+.row .value { font-variant-numeric: tabular-nums; min-width: 34px; text-align: right; }
+.muted { color: var(--muted); }
+.good { color: var(--good); }
+.warn { color: var(--warn); }
+.bad { color: var(--bad); }
+.card + .card { margin-top: 10px; border-top: 1px solid var(--panel-border); padding-top: 8px; }
+.key {
+  background: rgba(255,255,255,0.12);
+  border-radius: 3px;
+  padding: 0 5px;
+  font-size: 11px;
+}

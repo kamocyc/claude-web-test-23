@@ -16,11 +16,15 @@ overlay.innerHTML = `
 `
 document.body.appendChild(overlay)
 
+const uiRoot = document.createElement('div')
+uiRoot.id = 'ui'
+document.body.appendChild(uiRoot)
+
 const crosshair = document.createElement('div')
 crosshair.id = 'crosshair'
 document.body.appendChild(crosshair)
 
-const game = new Game(container)
+const game = new Game(container, uiRoot)
 game.start()
 // Exposed for debugging and for the headless screenshot harness.
 ;(window as unknown as { game: Game }).game = game

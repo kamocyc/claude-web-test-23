@@ -43,6 +43,11 @@ export class PlayerController {
     this.yaw = facing
   }
 
+  /** Drop the player at (x, z) already looking at a point of interest. */
+  spawnLookingAt(x: number, z: number, targetX: number, targetZ: number): void {
+    this.spawnAt(x, z, Math.atan2(-(targetX - x), -(targetZ - z)))
+  }
+
   isDown(code: string): boolean {
     return this.keys.has(code)
   }

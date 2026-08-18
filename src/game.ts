@@ -5,12 +5,13 @@ import { ToolBelt, ToolId } from './player/tools'
 import { AgentView } from './render/agentView'
 import { BridgeView } from './render/bridgeView'
 import { Markers } from './render/markers'
+import { Vegetation } from './render/vegetation'
 import { UNDER_CONSTRUCTION_COLOR } from './render/palette'
 import { Viewport } from './render/renderer'
 import { StructureView } from './render/structureView'
 import { WeatherView } from './render/weatherView'
 import { TerrainMesh } from './render/terrainMesh'
-import { buildWaterMesh } from './render/water'
+import { buildWaterSurface, type WaterSurface } from './render/water'
 import { World } from './sim/world'
 import { pickTarget } from './player/picking'
 import { BuildPanel } from './ui/buildPanel'
@@ -33,6 +34,9 @@ export class Game {
   readonly inspector: Inspector
   readonly agentView = new AgentView()
   readonly weatherView = new WeatherView()
+  readonly vegetation: Vegetation
+  private readonly water: WaterSurface
+  private elapsed = 0
   private readonly structures: StructureView
 
   private lastFrame = performance.now()
@@ -46,7 +50,8 @@ export class Game {
     this.viewport = new Viewport(container)
     this.terrainMesh = new TerrainMesh(this.world.field, this.world.grid)
     this.viewport.scene.add(this.terrainMesh.group)
-    this.viewport.scene.add(buildWaterMesh(this.world.field, this.world.grid))
+    this.water = buildWaterSurface(this.world.field, this.world.grid)
+    this.viewport.scene.add(this.water.mesh)
 
     this.player = new PlayerController(
       this.world.field,
@@ -66,6 +71,17 @@ export class Game {
     }
     this.viewport.scene.add(structures.group)
     this.viewport.scene.add(this.weatherView.points)
+
+    this.vegetation = new Vegetation(
+      this.world.field,
+      this.world.grid,
+      this.world.seed,
+      [...this.world.settlements.values()].map((settlement) => ({
+        x: settlement.x,
+        z: settlement.z,
+      })),
+    )
+    this.viewport.scene.add(this.vegetation.group)
 
     this.bridges = new BridgeView(this.world.grid)
     this.viewport.scene.add(this.bridges.group)
@@ -151,14 +167,18 @@ export class Game {
     let bridgeChanged = false
     for (const [tx, tz] of this.world.consumeDirtyTiles()) {
       this.terrainMesh.markTileDirty(tx, tz)
+      if (this.world.grid.hasRoad(tx, tz)) this.vegetation.clearTile(tx, tz)
       if (this.world.grid.isBridge(tx, tz)) bridgeChanged = true
     }
     if (bridgeChanged) this.bridges.rebuild()
     this.terrainMesh.update()
 
-    this.agentView.update(this.world.agents.agents)
+    this.agentView.update(this.world.agents.agents, this.player.position)
     for (const building of this.world.consumeNewBuildings()) this.structures.addBuilding(building)
     this.weatherView.update(this.world.weather.intensity, this.viewport.camera, realDelta)
+    this.vegetation.update(this.player.position)
+    this.elapsed += realDelta
+    this.water.update(this.elapsed, this.viewport.daylight)
 
     this.markers.setAim(this.tools.tool === ToolId.Stake ? this.tools.aim : null)
     this.markers.update(this.tools.preview, this.tools.stakes, (tile) =>

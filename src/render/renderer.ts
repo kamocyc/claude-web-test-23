@@ -15,6 +15,8 @@ export class Viewport {
   private readonly sun: THREE.DirectionalLight
   private readonly ambient: THREE.HemisphereLight
   private readonly skyColor = new THREE.Color()
+  /** 0 at night, 1 at midday. Other effects match their light to it. */
+  daylight = 1
 
   constructor(container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
@@ -47,6 +49,7 @@ export class Viewport {
     const sunAngle = (dayFraction - 0.25) * Math.PI * 2
     const height = Math.sin(sunAngle)
     const daylight = clamp01(height * 1.6 + 0.18)
+    this.daylight = daylight
     const duskness = clamp01(1 - Math.abs(height) * 4.5) * clamp01(0.5 + height * 3)
 
     this.sun.position.set(

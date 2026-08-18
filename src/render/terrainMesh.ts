@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { Heightfield } from '../world/heightfield'
 import { TILE_SIZE } from '../world/heightfield'
 import { RoadSurface, TerrainSurface, type TileGrid } from '../world/tileGrid'
+import { fbm } from '../world/noise'
 import { ROAD_COLORS, TERRAIN_COLORS, UNDER_CONSTRUCTION_COLOR, mix, scale, type Rgb } from './palette'
 
 const CHUNK = 32
@@ -9,8 +10,11 @@ const CHUNK = 32
 /** Cheap stable per-tile jitter so large fields do not look flat. */
 const tileJitter = (tx: number, tz: number): number => {
   const h = Math.imul(tx * 73856093 ^ tz * 19349663, 0x9e3779b9) >>> 0
-  return 0.92 + (h % 1000) / 1000 * 0.16
+  return 0.94 + (h % 1000) / 1000 * 0.12
 }
+
+/** Broad patches of richer and poorer ground, so a hillside is not one colour. */
+const groundPatch = (tx: number, tz: number): number => 1 + fbm(tx * 0.05, tz * 0.05, 991, 3) * 0.13
 
 export type TileOverlay = (tx: number, tz: number) => Rgb | null
 
@@ -99,7 +103,7 @@ export class TerrainMesh {
 
     const slope = this.field.tileSlope(tx, tz)
     const shade = 1 - Math.min(slope, 1) * 0.28
-    return scale(color, shade * tileJitter(tx, tz))
+    return scale(color, shade * tileJitter(tx, tz) * groundPatch(tx, tz))
   }
 
   private rebuildChunk(index: number): void {

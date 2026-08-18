@@ -3,7 +3,7 @@ import { BUILDINGS } from '../sim/buildings'
 import { ALL_RESOURCES, Resource } from '../sim/resources'
 import type { Settlement } from '../sim/settlement'
 import type { World } from '../sim/world'
-import { escapeHtml, formatIdleReason } from './format'
+import { escapeHtml, formatHaulFailure, formatIdleReason } from './format'
 import { RESOURCE_NAMES } from './locale/ja'
 
 const SEVERITY_COLOR: Record<GameEvent['severity'], string> = {
@@ -60,9 +60,9 @@ export class Hud {
       <div class="row muted">${speed}　<span class="key">Space</span> 停止 / <span class="key">[</span><span class="key">]</span> 速度</div>
     `
 
-    this.villagesEl.innerHTML = [...world.settlements.values()]
-      .map((settlement) => this.renderSettlement(settlement))
-      .join('')
+    this.villagesEl.innerHTML =
+      [...world.settlements.values()].map((settlement) => this.renderSettlement(settlement)).join('') +
+      this.renderPending(world)
 
     this.eventsEl.innerHTML = world.events
       .recent(6)
@@ -72,6 +72,28 @@ export class Hud {
       )
       .reverse()
       .join('')
+  }
+
+  /** Needs the network cannot meet, with the reason. This is the to-do list. */
+  private renderPending(world: World): string {
+    const stuck = world.logistics.pending
+      .filter((entry) => entry.reason.kind === 'noRoute' || entry.reason.kind === 'downgraded')
+      .slice(0, 3)
+    if (stuck.length === 0) return ''
+    const rows = stuck
+      .map((entry) => {
+        if (entry.reason.kind === 'noRoute') {
+          return `<div class="row"><span class="name">${RESOURCE_NAMES[entry.resource]} ${entry.units}</span>
+            <span class="muted">→ ${escapeHtml(entry.toLabel)}</span></div>
+            <div class="row bad">${formatHaulFailure(entry.reason.failure)}</div>`
+        }
+        if (entry.reason.kind !== 'downgraded') return ''
+        return `<div class="row"><span class="name">${RESOURCE_NAMES[entry.resource]} ${entry.units}</span>
+          <span class="muted">→ ${escapeHtml(entry.toLabel)}</span></div>
+          <div class="row warn">${formatHaulFailure(entry.reason.failure)}ので、背負いで少しずつしか運べない</div>`
+      })
+      .join('')
+    return `<div class="card"><div class="row title">輸送の隘路</div>${rows}</div>`
   }
 
   private renderSettlement(settlement: Settlement): string {

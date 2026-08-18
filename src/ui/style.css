@@ -111,7 +111,7 @@ canvas { display: block; }
 
 #inspector {
   right: 14px;
-  top: 400px;
+  bottom: 120px;
   width: 320px;
 }
 #inspector .row { flex-wrap: wrap; gap: 6px; }

@@ -21,7 +21,7 @@ import { tileSurfaceHeight } from './world/surface'
 
 /** Wires the headless simulation to rendering, input and UI. */
 export class Game {
-  readonly world: World
+  world: World
   readonly viewport: Viewport
   readonly player: PlayerController
   readonly terrainMesh: TerrainMesh
@@ -39,8 +39,10 @@ export class Game {
   private previousSpeed: SpeedStep = 1
   private readonly lookDirection = new THREE.Vector3()
 
-  constructor(container: HTMLElement, uiRoot: HTMLElement, seed?: number) {
-    this.world = new World(seed)
+  private running = true
+
+  constructor(container: HTMLElement, uiRoot: HTMLElement, world?: World) {
+    this.world = world ?? new World()
     this.viewport = new Viewport(container)
     this.terrainMesh = new TerrainMesh(this.world.field, this.world.grid)
     this.viewport.scene.add(this.terrainMesh.group)
@@ -86,7 +88,7 @@ export class Game {
     const spawn = this.world.layout.farmVillage
     this.player.spawnLookingAt(spawn.x + 34, spawn.z + 26, spawn.x, spawn.z)
     document.addEventListener('keydown', this.onKeyDown)
-    this.world.log('info', '谷に着いた。鉱山村は食料が尽きかけている。')
+    if (!world) this.world.log('info', '谷に着いた。鉱山村は食料が尽きかけている。')
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
@@ -111,8 +113,18 @@ export class Game {
     }
   }
 
+  /** Tear down so another Game can take over the same page (used by load). */
+  dispose(): void {
+    this.running = false
+    this.tools.dispose()
+    this.player.dispose()
+    document.removeEventListener('keydown', this.onKeyDown)
+    this.viewport.dispose()
+  }
+
   start(): void {
     const loop = (now: number): void => {
+      if (!this.running) return
       requestAnimationFrame(loop)
       // Clamped so a backgrounded tab cannot jump the world forward, but loose
       // enough that a slow frame rate still honours the chosen speed.

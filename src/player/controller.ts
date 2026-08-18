@@ -34,6 +34,14 @@ export class PlayerController {
     document.addEventListener('mousemove', this.onMouseMove)
   }
 
+  /** Detach global listeners so a replaced controller cannot double-handle input. */
+  dispose(): void {
+    document.removeEventListener('keydown', this.onKeyDown)
+    document.removeEventListener('keyup', this.onKeyUp)
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange)
+    document.removeEventListener('mousemove', this.onMouseMove)
+  }
+
   requestLock(): void {
     this.domElement.requestPointerLock()
   }

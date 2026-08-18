@@ -20,7 +20,12 @@ export interface PendingHaul {
   readonly fromLabel: string
   readonly toLabel: string
   readonly units: number
-  readonly reason: { kind: 'noRoute'; failure: BlockedReason } | { kind: 'noHauler' } | { kind: 'noSupply' }
+  readonly reason:
+    | { kind: 'noRoute'; failure: BlockedReason }
+    /** Something is moving, but only on somebody's back. */
+    | { kind: 'downgraded'; failure: BlockedReason }
+    | { kind: 'noHauler' }
+    | { kind: 'noSupply' }
 }
 
 interface Demand {
@@ -136,6 +141,8 @@ export class LogisticsSystem {
     const homeId = supplier.id
     let lastFailure: BlockedReason = null
     let sawHauler = false
+    /** Set when a bigger vehicle was refused a route before a smaller one took the job. */
+    let refusedBigger: BlockedReason = null
 
     // Try the cart first: fewer trips, but it needs a real road all the way.
     for (const vehicleType of [VehicleType.Handcart, VehicleType.Porter]) {
@@ -155,6 +162,7 @@ export class LogisticsSystem {
       const route = this.world.finder.find(from, to, vehicle, loadKg)
       if (route.failure !== null) {
         lastFailure = route.failure
+        if (vehicleType === VehicleType.Handcart) refusedBigger = route.failure
         continue
       }
 
@@ -180,6 +188,16 @@ export class LogisticsSystem {
         claimed.delete(agent.id)
         lastFailure = 'blocked'
         continue
+      }
+      if (refusedBigger !== null) {
+        // Worth saying out loud: this only moves because someone is carrying it.
+        this.pending.push({
+          resource: demand.resource,
+          fromLabel: supplier.label,
+          toLabel: demand.holder.label,
+          units: demand.units,
+          reason: { kind: 'downgraded', failure: refusedBigger },
+        })
       }
       return true
     }

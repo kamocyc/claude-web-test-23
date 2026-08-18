@@ -71,4 +71,10 @@ export class Viewport {
   render(): void {
     this.renderer.render(this.scene, this.camera)
   }
+
+  dispose(): void {
+    window.removeEventListener('resize', this.handleResize)
+    this.renderer.domElement.remove()
+    this.renderer.dispose()
+  }
 }

@@ -249,7 +249,11 @@ export class World {
     return list
   }
 
+  /** Suppresses event spam while a save is being restored. */
+  restoring = false
+
   log(severity: EventSeverity, text: string): void {
+    if (this.restoring) return
     this.events.push(this.clock.gameTime, severity, text)
   }
 
@@ -317,6 +321,11 @@ export class World {
     this.structureSites.push(site)
     this.log('info', `${site.label} の建設地を決めた`)
     return site
+  }
+
+  /** Complete a placed structure immediately (used when restoring a save). */
+  finishStructureNow(site: StructureSite): void {
+    this.finishStructure(site)
   }
 
   private finishStructure(site: StructureSite): void {

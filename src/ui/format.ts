@@ -1,4 +1,5 @@
 import { round } from '../core/math'
+import type { BlockedReason } from '../roads/pathfinding'
 import type { IdleReason } from '../sim/buildings'
 import { RESOURCE_INFO, type Resource } from '../sim/resources'
 import { RESOURCE_NAMES } from './locale/ja'
@@ -20,6 +21,22 @@ export const formatIdleReason = (reason: IdleReason): string => {
       return `${RESOURCE_NAMES[reason.resource]}の置き場が満杯`
     default:
       return ''
+  }
+}
+
+/** Why a hauling order could not be routed. */
+export const formatHaulFailure = (failure: BlockedReason): string => {
+  switch (failure) {
+    case 'needsRoad':
+      return '荷車の通れる道がない'
+    case 'tooSteep':
+      return '坂が急すぎる'
+    case 'water':
+      return '川を渡れない'
+    case 'overloaded':
+      return '路面が積荷の重さに耐えない'
+    default:
+      return '経路がない'
   }
 }
 

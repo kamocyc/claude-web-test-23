@@ -8,7 +8,14 @@ import type { DelayCause, RouteNote, StuckReason } from '../sim/explain'
 import { RESOURCE_INFO } from '../sim/resources'
 import type { World } from '../sim/world'
 import { RoadSurface } from '../world/tileGrid'
-import { escapeHtml, formatDuration, formatGrade, formatIdleReason, resourceAmount } from './format'
+import {
+  escapeHtml,
+  formatDuration,
+  formatGrade,
+  formatHaulFailure,
+  formatIdleReason,
+  resourceAmount,
+} from './format'
 import { ROAD_SURFACE_NAMES } from './locale/ja'
 
 const STATE_LABELS: Record<AgentState, string> = {
@@ -51,19 +58,13 @@ const formatStuck = (stuck: StuckReason): string => {
   if (!stuck) return ''
   switch (stuck.kind) {
     case 'noRoute':
-      return stuck.failure === 'needsRoad'
-        ? '荷車の通れる道がない'
-        : stuck.failure === 'tooSteep'
-          ? '坂が急すぎて登れない'
-          : stuck.failure === 'water'
-            ? '川を渡れない'
-            : stuck.failure === 'overloaded'
-              ? '路面が積荷の重さに耐えない'
-              : '経路がない'
+      return formatHaulFailure(stuck.failure)
     case 'noCargo':
       return `${RESOURCE_INFO[stuck.resource].label}が積めなかった`
     case 'noWork':
       return '仕事がない'
+    case 'robbed':
+      return '盗賊に荷を奪われた'
     default:
       return ''
   }

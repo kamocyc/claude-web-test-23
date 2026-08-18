@@ -12,11 +12,18 @@
  * The speed multiplier scales both, keeping them consistent.
  */
 export const SIM_DT = 1 / 20
+/**
+ * Fixed steps a single frame may run: enough for the highest speed setting even
+ * at a poor frame rate (0.25 s of real time x 16 = 4 s of simulation). The real
+ * guard against a backgrounded tab is the 0.25 s clamp on frame time, not this;
+ * a simulation step is far cheaper than a rendered frame.
+ */
+export const MAX_STEPS_PER_FRAME = 80
 export const GAME_SECONDS_PER_SIM_SECOND = 72
 export const GAME_SECONDS_PER_DAY = 24 * 3600
 export const GAME_HOUR = 3600
 
-export const SPEED_STEPS = [0, 1, 2, 4] as const
+export const SPEED_STEPS = [0, 1, 2, 4, 8, 16] as const
 export type SpeedStep = (typeof SPEED_STEPS)[number]
 
 export class Clock {
@@ -63,9 +70,9 @@ export class Clock {
     if (this.paused) return 0
     this.accumulator += Math.min(realDelta, 0.25) * this.speed
     // The cap keeps a stalled tab from spiralling, but has to be loose enough
-    // that a slow machine can still honour a 4x speed setting.
+    // that a modest frame rate can still honour the highest speed setting.
     let steps = 0
-    while (this.accumulator >= SIM_DT && steps < 16) {
+    while (this.accumulator >= SIM_DT && steps < MAX_STEPS_PER_FRAME) {
       this.accumulator -= SIM_DT
       steps++
     }

@@ -7,7 +7,7 @@ import { emptyExplain, type ExplainRecord } from './explain'
 import type { HaulOrder } from './logistics'
 import { RESOURCE_INFO, type Resource } from './resources'
 import { VEHICLES, VehicleType, grossWeight, type VehicleDef } from './vehicles'
-import type { World } from './world'
+import { BUILDER_RELEASE_DISTANCE, type World } from './world'
 
 export enum AgentKind {
   Hauler = 'hauler',
@@ -371,14 +371,26 @@ export class AgentSystem {
   }
 
   private workSite(agent: Agent): void {
-    const site = this.world.sites.find((candidate) => candidate.id === agent.siteId)
+    const site =
+      this.world.sites.find((candidate) => candidate.id === agent.siteId) ??
+      this.world.structureSites.find((candidate) => candidate.id === agent.siteId)
     if (!site || site.done) {
       agent.siteId = null
       this.sendHome(agent)
       return
     }
-    // Follow the work front as it advances along the alignment.
-    if (Math.hypot(site.x - agent.x, site.z - agent.z) > 14) {
+
+    const distance = Math.hypot(site.x - agent.x, site.z - agent.z)
+    const home = this.world.settlements.get(agent.homeId)
+    // A front that has crossed the valley belongs to the other village's crew.
+    if (home && Math.hypot(site.x - home.x, site.z - home.z) > BUILDER_RELEASE_DISTANCE) {
+      agent.siteId = null
+      this.sendHome(agent)
+      return
+    }
+    // Move up only once the front has genuinely left them behind, and then aim
+    // ahead of it rather than at it.
+    if (distance > 26) {
       const target = this.world.stopTileFor(site.id, agent.vehicleType)
       if (target && this.routeTo(agent, target)) agent.state = AgentState.ToSite
     }

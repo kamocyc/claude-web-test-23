@@ -102,8 +102,13 @@ export class ConstructionSite implements StockHolder {
       if (this.workers <= 0) this.blockReason = { kind: 'noWorkers' }
       return finished
     }
-    if (fromPlayer) this.playerHours += personHours
-    else this.crewHours += personHours
+    // Hours are credited as they are spent, not as they are offered: work that
+    // stops at a materials shortage should not show up as work done.
+    const credit = (): void => {
+      const spent = personHours - budget
+      if (fromPlayer) this.playerHours += spent
+      else this.crewHours += spent
+    }
 
     while (budget > 0 && !this.done) {
       const tile = this.plan.tiles[this.tileIndex]
@@ -116,6 +121,7 @@ export class ConstructionSite implements StockHolder {
         }
         if (missing !== null) {
           this.blockReason = { kind: 'awaitingMaterials', resource: missing }
+          credit()
           return finished
         }
         for (const [key, amount] of Object.entries(tile.materials)) {
@@ -138,6 +144,7 @@ export class ConstructionSite implements StockHolder {
       }
     }
 
+    credit()
     this.blockReason = null
     return finished
   }

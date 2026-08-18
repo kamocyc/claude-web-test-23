@@ -30,6 +30,20 @@ import type { TilePos } from '../roads/tileLine'
 /** How many villagers the player is worth when they work a site themselves. */
 export const PLAYER_LABOUR_RATE = 16
 
+/** How near the work front a builder must be to count as working it. */
+export const BUILDER_WORK_RADIUS = 34
+/** A village will not send its crew further than this to a work front. */
+export const BUILDER_TRAVEL_LIMIT = 260
+/** Past this, the crew gives up on a front that has moved on without them. */
+export const BUILDER_RELEASE_DISTANCE = 360
+
+/** Game hours between passes of road wear and drying. */
+const WEAR_INTERVAL_HOURS = 0.25
+
+/** Villagers a settlement will put on public works, given its population. */
+export const builderCountFor = (population: number): number =>
+  Math.max(2, Math.round(population / 2.5))
+
 /**
  * The simulation world. Nothing in here (or anything it imports) may touch
  * three.js or the DOM, so the whole simulation can be stepped headlessly in tests.
@@ -64,6 +78,7 @@ export class World {
   /** Set by the player controller while they are working a site by hand. */
   playerWork: { x: number; z: number; active: boolean } = { x: 0, z: 0, active: false }
   private nextSiteId = 1
+  private wearAccumulator = 0
 
   /** Tiles changed this tick, so the renderer can repaint just those chunks. */
   private readonly dirtyTiles: Array<[number, number]> = []
@@ -96,16 +111,19 @@ export class World {
     this.bandits = new BanditSystem(generated.layout.banditCamp)
 
     const agentCounts = options.spawnAgents === false ? [] : ([
-      ['farm', 3, 2, 3],
-      ['mine', 2, 1, 3],
+      ['farm', 3, 2],
+      ['mine', 2, 1],
     ] as const)
-    for (const [id, porters, carts, builders] of agentCounts) {
+    for (const [id, porters, carts] of agentCounts) {
       for (let i = 0; i < porters; i++) {
         this.agents.spawn(AgentKind.Hauler, VehicleType.Porter, id)
       }
       for (let i = 0; i < carts; i++) {
         this.agents.spawn(AgentKind.Hauler, VehicleType.Handcart, id)
       }
+      // A road is built by whoever the village can spare, so the crew scales
+      // with how many people live there.
+      const builders = builderCountFor(this.settlement(id).population)
       for (let i = 0; i < builders; i++) {
         this.agents.spawn(AgentKind.Builder, VehicleType.Porter, id)
       }
@@ -432,9 +450,16 @@ export class World {
     if (this.weather.step(hours, this.rng)) {
       this.log('info', `天気が${this.weather.label}になった`)
     }
-    stepRoadWear(this.grid, this.roadTiles, hours, this.weather.intensity, (tx, tz) =>
-      this.markTileDirty(tx, tz),
-    )
+    // Wear touches every built tile, so it runs in batches rather than every
+    // tick. At high speed settings that is the difference between a smooth
+    // frame and a stutter.
+    this.wearAccumulator += hours
+    if (this.wearAccumulator >= WEAR_INTERVAL_HOURS) {
+      stepRoadWear(this.grid, this.roadTiles, this.wearAccumulator, this.weather.intensity, (tx, tz) =>
+        this.markTileDirty(tx, tz),
+      )
+      this.wearAccumulator = 0
+    }
 
     stepProduction(this.settlements, this.buildings, hours)
     for (const settlement of this.settlements.values()) settlement.consumeFood(hours)
@@ -449,7 +474,8 @@ export class World {
       if (agent.state !== AgentState.Working || !agent.siteId) continue
       const road = this.sites.find((candidate) => candidate.id === agent.siteId)
       if (road) {
-        road.workers++
+        // Standing on the alignment near the front counts as working it.
+        if (Math.hypot(road.x - agent.x, road.z - agent.z) <= BUILDER_WORK_RADIUS) road.workers++
         continue
       }
       const structure = this.structureSites.find((candidate) => candidate.id === agent.siteId)

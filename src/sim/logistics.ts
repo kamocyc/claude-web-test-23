@@ -3,7 +3,7 @@ import { AgentKind, AgentState, type Agent } from './agents'
 import { ALL_RESOURCES, Resource, unitsThatFit } from './resources'
 import type { StockHolder } from './stock'
 import { VEHICLES, VehicleType } from './vehicles'
-import type { World } from './world'
+import { BUILDER_TRAVEL_LIMIT, type World } from './world'
 
 export interface HaulOrder {
   readonly id: number
@@ -232,7 +232,8 @@ export class LogisticsSystem {
   assignBuilders(): void {
     const sites = [...this.world.sites, ...this.world.structureSites].filter((site) => !site.done)
     if (sites.length === 0) return
-    const perSite = 6
+    // High enough that one site can absorb every builder both villages can spare.
+    const perSite = 12
 
     const counts = new Map<string, number>()
     for (const agent of this.world.agents.agents) {
@@ -243,7 +244,13 @@ export class LogisticsSystem {
     for (const site of sites) {
       let staffed = counts.get(site.id) ?? 0
       if (staffed >= perSite) continue
-      for (const builder of this.world.agents.idleBuilders()) {
+      // Nearest crews first, and never send a village across the valley.
+      const candidates = this.world.agents
+        .idleBuilders()
+        .map((builder) => ({ builder, distance: Math.hypot(site.x - builder.x, site.z - builder.z) }))
+        .filter((entry) => entry.distance <= BUILDER_TRAVEL_LIMIT)
+        .sort((a, b) => a.distance - b.distance)
+      for (const { builder } of candidates) {
         if (staffed >= perSite) break
         const target = this.world.stopTileFor(site.id, builder.vehicleType)
         if (!target || !this.world.agents.routeTo(builder, target)) continue
